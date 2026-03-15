@@ -24,6 +24,7 @@ export const generateClassAnalytics = async (subject) => {
   
   const aiResponse = await groq.chat.completions.create({
     model: "llama-3.3-70b-versatile",
+    model: process.env.GROQ_MODEL || "llama-3.3-70b-versatile",
     messages: [{
         role: "system",
         content: "Ti je një analist akademik. Analizo listën e dobësive të studentëve dhe nxirr 3 temat kryesore ku profesori duhet të fokusohet në leksionin tjetër."

@@ -30,8 +30,8 @@ const app = Fastify({
 // });
 
 app.register(cors, {
-    origin: ["http://localhost:3000", "http://localhost:3001"], // Lejo të dyja portat
-    methods: ["GET", "POST", "PUT", "DELETE"]
+  origin: "*", // Kjo lejon çdo kërkesë nga çdo portë
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 });
 
 // 2. Regjistrimi i JWT (Për sigurinë e sistemit)

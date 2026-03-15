@@ -1,34 +1,84 @@
 "use client";
-import React, { useState } from 'react';
-import { LayoutDashboard, FileText, GraduationCap, BarChart3, Send, CheckCircle, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { 
+  LayoutDashboard, FileText, GraduationCap, BarChart3, 
+  Send, Sparkles, BrainCircuit, Database, AlertCircle, RefreshCw 
+} from 'lucide-react';
 import dynamic from 'next/dynamic';
 
-// Importimi Dinamik i Grafikut (Zgjidh problemet e SSR)
+// Importimi Dinamik i Grafikut
 const AnalyticsChart = dynamic(() => import('../components/AnalyticsChart'), { 
   ssr: false,
-  loading: () => <div className="h-[300px] w-full bg-slate-100 animate-pulse rounded-2xl"></div>
+  loading: () => <div className="h-[350px] w-full bg-slate-100 animate-pulse rounded-2xl"></div>
 });
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('grading');
-  const [inputData, setInputData] = useState({ studentAnswer: '', questionText: '', rubric: '', subject: 'Programim' });
-  const [result, setResult] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState(null);
+  const [statusIndex, setStatusIndex] = useState(0);
+  const [inputData, setInputData] = useState({ 
+    studentAnswer: '', 
+    questionText: '', 
+    rubric: '', 
+    subject: 'Programim' 
+  });
+
+  const loadingMessages = [
+    "Duke analizuar tekstin...",
+    "Duke u konsultuar me Llama-3.3...",
+    "Duke krahasuar me rubrikën...",
+    "Duke gjeneruar pikat e forta...",
+    "Po përfundoj raportin..."
+  ];
+
+  useEffect(() => {
+    let interval;
+    if (loading) {
+      interval = setInterval(() => {
+        setStatusIndex((prev) => (prev + 1) % loadingMessages.length);
+      }, 2000);
+    } else {
+      setStatusIndex(0);
+    }
+    return () => clearInterval(interval);
+  }, [loading]);
 
   const handleGrade = async () => {
+    if (!inputData.questionText || !inputData.studentAnswer) {
+      setError("Ju lutem plotësoni të paktën Pyetjen dhe Përgjigjen.");
+      return;
+    }
+
     setLoading(true);
+    setError(null);
+    setResult(null);
+    
     try {
-      const res = await fetch('http://localhost:3000/api/v1/grading/grade', {
+      const res = await fetch('http://127.0.0.1:3000/api/v1/grading/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputData),
       });
+
+      if (!res.ok) throw new Error(`Serveri ktheu statusin ${res.status}`);
+
       const data = await res.json();
-      setResult(data.data);
+      
+      if (data.success) {
+        setResult(data.data);
+      } else {
+        throw new Error(data.error || "Dështoi vlerësimi nga AI.");
+      }
     } catch (err) {
-      alert("Gabim gjatë lidhjes me serverin! Sigurohu që Backend-i po punon në portën 3000.");
+      setError(err.message === "Failed to fetch" 
+        ? "Lidhja dështoi. Sigurohu që Backend-i është i ndezur në portën 3000!" 
+        : err.message);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   return (
@@ -39,17 +89,17 @@ export default function Dashboard() {
           <div className="bg-blue-600 p-2 rounded-xl text-white shadow-lg shadow-blue-200">
             <GraduationCap size={24} />
           </div>
-          <h1 className="font-bold text-xl tracking-tight text-slate-800">AI Assistant</h1>
+          <h1 className="font-bold text-xl tracking-tight text-slate-800 uppercase italic">AI Assistant</h1>
         </div>
         
         <nav className="space-y-2 flex-1">
           <button onClick={() => setActiveTab('grading')} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'grading' ? 'bg-blue-50 text-blue-600 font-semibold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}>
             <FileText size={20} /> Vlerësimi AI
           </button>
-          <button onClick={() => setActiveTab('exams')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
             <LayoutDashboard size={20} /> Provimet
           </button>
-          <button onClick={() => setActiveTab('analytics')} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
+          <button className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all">
             <BarChart3 size={20} /> Analitika
           </button>
         </nav>
@@ -59,122 +109,153 @@ export default function Dashboard() {
       <main className="flex-1 overflow-y-auto p-10">
         {/* Header Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-slate-500 text-sm font-medium">Studentë të Vlerësuar</p>
-            <h4 className="text-3xl font-bold mt-1">1,284</h4>
-            <span className="text-green-500 text-xs font-bold flex items-center gap-1 mt-1">
-              <CheckCircle size={12} /> +12% këtë muaj
-            </span>
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">Studentë të Vlerësuar</p>
+            <h4 className="text-3xl font-black mt-1">1,284</h4>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-slate-500 text-sm font-medium">Mesatarja e Klasës</p>
-            <h4 className="text-3xl font-bold mt-1">78.4%</h4>
-            <div className="w-full bg-slate-100 h-2 rounded-full mt-4">
-                <div className="bg-blue-600 h-2 rounded-full w-[78%] transition-all duration-1000"></div>
-            </div>
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm border-b-blue-500 border-b-4">
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">Mesatarja e Klasës</p>
+            <h4 className="text-3xl font-black mt-1 text-blue-600">78.4%</h4>
           </div>
-          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm hover:shadow-md transition-shadow">
-            <p className="text-slate-500 text-sm font-medium">Saktësia e AI</p>
-            <h4 className="text-3xl font-bold mt-1">99.2%</h4>
-            <span className="text-blue-500 text-xs font-bold uppercase mt-1 inline-block">Llama-3.3 Engine</span>
+          <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm">
+            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider">Saktësia e AI</p>
+            <h4 className="text-3xl font-black mt-1">99.2%</h4>
           </div>
         </div>
 
         {/* Analytics Section */}
-        <div className="mb-10">
+        <div className="mb-10 h-[350px]">
            <AnalyticsChart />
         </div>
 
-        <header className="mb-8">
-          <h2 className="text-2xl font-bold text-slate-800 tracking-tight">Vlerësimi Automatik i Detyrave</h2>
-          <p className="text-slate-500">Analizo përgjigjet e studentëve duke përdorur inteligjencën artificiale të Groq.</p>
-        </header>
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          {/* Form Card */}
-          <section className="bg-white p-8 rounded-2xl shadow-sm border border-slate-100">
+          {/* Form Side */}
+          <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
+            <h2 className="text-xl font-bold mb-6 flex items-center gap-2">
+              <Sparkles className="text-blue-500" size={20} /> 
+              Detajet e Detyrës
+            </h2>
             <div className="space-y-6">
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Pyetja e Provimit</label>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">Pyetja e Provimit</label>
                 <textarea 
-                  className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-300"
                   rows="3"
-                  placeholder="P.sh. Shpjegoni parimin e punës së motorit me djegie të brendshme..."
+                  placeholder="Shkruaj pyetjen këtu..."
                   onChange={(e) => setInputData({...inputData, questionText: e.target.value})}
                 ></textarea>
               </div>
               <div>
-                <label className="block text-sm font-bold text-slate-700 mb-2">Përgjigja e Studentit</label>
+                <label className="block text-xs font-black text-slate-400 uppercase mb-2">Përgjigja e Studentit</label>
                 <textarea 
-                  className="w-full p-4 border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 outline-none transition-all placeholder:text-slate-400"
-                  rows="5"
-                  placeholder="Shkruaj përgjigjen e studentit këtu..."
+                  className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all h-40 placeholder:text-slate-300"
+                  placeholder="Ngjit përgjigjen e studentit..."
                   onChange={(e) => setInputData({...inputData, studentAnswer: e.target.value})}
                 ></textarea>
               </div>
+              
               <button 
                 onClick={handleGrade}
                 disabled={loading}
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-4 rounded-xl flex items-center justify-center gap-3 transition-all shadow-lg shadow-blue-100 disabled:opacity-50 disabled:cursor-not-allowed"
+                className={`relative w-full overflow-hidden font-black uppercase tracking-widest py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl 
+                  ${loading 
+                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed' 
+                    : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}
               >
-                {loading ? (
-                  <div className="flex items-center gap-2">
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                    Duke procesuar...
-                  </div>
-                ) : (
-                  <><Send size={18} /> Analizo me AI</>
-                )}
+                <AnimatePresence mode="wait">
+                  {loading ? (
+                    <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="flex items-center gap-2">
+                      <BrainCircuit className="animate-spin" size={20} />
+                      <span>Duke Procesuar...</span>
+                    </motion.div>
+                  ) : (
+                    <motion.div initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex items-center gap-2">
+                      <Send size={18} />
+                      <span>Analizo me AI</span>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </button>
             </div>
           </section>
 
-          {/* Result Card */}
-          <section className="bg-slate-900 text-white p-8 rounded-2xl shadow-2xl min-h-[450px] relative overflow-hidden">
-            {/* Background Accent */}
-            <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl rounded-full -mr-10 -mt-10"></div>
-            
-            {result ? (
-              <div className="space-y-6 relative z-10 animate-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-xl font-bold text-blue-100 italic">Raporti i Vlerësimit</h3>
-                  <div className="text-right">
-                    <span className="block text-xs uppercase text-slate-400 font-bold tracking-widest">Pikët Totale</span>
-                    <span className="text-5xl font-black text-green-400">{result.score}<span className="text-xl text-slate-500">/100</span></span>
+          {/* Result / Loading / Error Side */}
+          <section className="bg-slate-900 text-white p-8 rounded-3xl shadow-2xl min-h-[500px] relative overflow-hidden flex flex-col justify-center border-4 border-slate-800">
+            <AnimatePresence mode="wait">
+              {loading ? (
+                <motion.div key="loader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="flex flex-col items-center space-y-8">
+                  <div className="relative">
+                    <motion.div animate={{ rotate: 360 }} transition={{ duration: 4, repeat: Infinity, ease: "linear" }} className="w-28 h-28 border-4 border-blue-500/10 border-t-blue-500 rounded-full" />
+                    <div className="absolute inset-0 flex items-center justify-center">
+                      <Sparkles className="text-blue-400 animate-pulse" size={40} />
+                    </div>
+                  </div>
+                  <div className="text-center space-y-2">
+                    <motion.p key={statusIndex} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="text-2xl font-bold text-blue-50">
+                      {loadingMessages[statusIndex]}
+                    </motion.p>
+                    <p className="text-slate-500 animate-pulse">Llama-3.3 po gjeneron raportin...</p>
+                  </div>
+                </motion.div>
+              ) : error ? (
+                <motion.div key="error" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} className="text-center space-y-6">
+                  <div className="w-20 h-20 bg-red-500/20 rounded-full flex items-center justify-center mx-auto border border-red-500/50">
+                    <AlertCircle size={40} className="text-red-500" />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-2xl font-bold text-red-50">Ndodhi një gabim</h3>
+                    <p className="text-slate-400 text-sm max-w-[280px] mx-auto leading-relaxed">{error}</p>
+                  </div>
+                  <button onClick={handleGrade} className="flex items-center gap-2 mx-auto text-blue-400 hover:text-blue-300 font-bold transition-all uppercase text-xs tracking-widest">
+                    <RefreshCw size={14} /> Provo përsëri
+                  </button>
+                </motion.div>
+              ) : result ? (
+                <motion.div key="result" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xs font-black text-blue-500 uppercase tracking-[0.2em] mb-1">Raporti i Vlerësimit</h3>
+                      <p className="text-slate-400 text-sm italic">Gjeneruar nga AI Teaching Assistant</p>
+                    </div>
+                    <div className="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700">
+                      <span className="text-5xl font-black text-green-400">{result.score}</span>
+                      <span className="block text-[10px] font-black text-slate-500 uppercase">Pikë / 100</span>
+                    </div>
+                  </div>
+                  <div className="h-px bg-gradient-to-r from-transparent via-slate-700 to-transparent"></div>
+                  <div>
+                    <h4 className="text-blue-400 font-bold mb-3 flex items-center gap-2 text-sm uppercase">
+                      <BrainCircuit size={16} /> Analiza e Përgjigjes
+                    </h4>
+                    <p className="text-slate-300 leading-relaxed text-sm bg-slate-800/30 p-4 rounded-xl border border-slate-800">
+                      {result.feedback}
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-green-500/5 p-4 rounded-2xl border border-green-500/20">
+                      <h5 className="text-green-400 text-[10px] font-black mb-3 uppercase tracking-widest">Pikat e Forta</h5>
+                      <ul className="text-xs space-y-2 text-slate-300">
+                        {result.strengths?.map((s, i) => <li key={i} className="flex items-start gap-2"><span>•</span> {s}</li>)}
+                      </ul>
+                    </div>
+                    <div className="bg-red-500/5 p-4 rounded-2xl border border-red-500/20">
+                      <h5 className="text-red-400 text-[10px] font-black mb-3 uppercase tracking-widest">Për Përmirësim</h5>
+                      <ul className="text-xs space-y-2 text-slate-300">
+                        {result.weaknesses?.map((w, i) => <li key={i} className="flex items-start gap-2"><span>•</span> {w}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+                </motion.div>
+              ) : (
+                <div className="text-center space-y-4">
+                  <Database size={64} className="mx-auto text-slate-800" />
+                  <div className="space-y-1">
+                    <p className="text-slate-500 font-bold uppercase text-xs tracking-tighter">Sistemi është gati</p>
+                    <p className="text-slate-700 text-sm">Pritet hyrja e të dhënave nga profesori...</p>
                   </div>
                 </div>
-                <div className="h-px bg-slate-800"></div>
-                <div>
-                  <h4 className="text-blue-400 font-semibold mb-2 flex items-center gap-2">
-                    <AlertCircle size={16} /> Komenti i Profesorit AI:
-                  </h4>
-                  <p className="text-slate-300 leading-relaxed text-sm lg:text-base">
-                    {result.feedback}
-                  </p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                  <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 backdrop-blur-sm">
-                    <h5 className="text-green-400 text-xs uppercase font-black mb-3 tracking-tighter">Pikat e Forta</h5>
-                    <ul className="text-sm space-y-2 text-slate-300">
-                      {result.strengths?.map((s, i) => <li key={i} className="flex items-start gap-2"><span>✅</span> {s}</li>)}
-                    </ul>
-                  </div>
-                  <div className="bg-slate-800/50 p-4 rounded-xl border border-slate-700 backdrop-blur-sm">
-                    <h5 className="text-red-400 text-xs uppercase font-black mb-3 tracking-tighter">Sugjerime për përmirësim</h5>
-                    <ul className="text-sm space-y-2 text-slate-300">
-                      {result.weaknesses?.map((w, i) => <li key={i} className="flex items-start gap-2"><span>💡</span> {w}</li>)}
-                    </ul>
-                  </div>
-                </div>
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full text-slate-600">
-                <div className="w-16 h-16 bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                    <FileText size={32} className="opacity-20" />
-                </div>
-                <p className="text-center text-sm max-w-[200px]">Plotësoni të dhënat majtas për të gjeneruar vlerësimin.</p>
-              </div>
-            )}
+              )}
+            </AnimatePresence>
           </section>
         </div>
       </main>
