@@ -69,7 +69,7 @@ app.get('/', async () => {
     return { 
         message: "Mirësevini në AI Teaching Assistant API",
         version: "1.0.0",
-        author: "Valdrin Maxhuni"
+        author: "Dion Beqiri"
     };
 });
 
@@ -77,7 +77,7 @@ app.get('/', async () => {
 app.get('/api/v1/health', async (request, reply) => {
     return { 
         status: 'Online', 
-        ai_engine: 'Groq Llama-3.3-70b',
+        ai_engine: 'OpenAi',
         database: 'Supabase connected',
         timestamp: new Date().toISOString() 
     };
