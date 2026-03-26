@@ -319,7 +319,7 @@ export default function Dashboard() {
                     ) : result ? (
                       <motion.div key="res" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
                         <div className="flex items-center justify-between">
-                          <div><h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-1 italic">Raporti i Vlerësimit</h3><p className="text-slate-400 text-sm italic italic tracking-tight">OpenGPT is AI and can make mistakes.</p></div>
+                          <div><h3 className="text-xs font-black text-blue-500 uppercase tracking-widest mb-1 italic">Raporti i Vlerësimit</h3><p className="text-slate-400 text-sm italic italic tracking-tight">GPT is AI and can makeOpen mistakes.</p></div>
                           <div className="bg-slate-800 p-4 rounded-2xl text-center border border-slate-700 shadow-inner"><span className="text-5xl font-black text-green-400">{result.score}</span><span className="block text-[10px] font-black text-slate-500 uppercase italic">Pikë</span></div>
                         </div>
                         <div className="h-px bg-slate-700"></div>
