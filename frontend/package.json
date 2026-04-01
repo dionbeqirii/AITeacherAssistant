@@ -3,12 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
-    "start": "next start",
+    "dev": "npm dev",
+    "build": "npm build",
+    "start": "npm start",
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.101.1",
     "axios": "^1.13.6",
     "framer-motion": "^12.36.0",
     "lucide-react": "^0.577.0",
