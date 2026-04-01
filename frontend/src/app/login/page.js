@@ -57,29 +57,74 @@ function LoginContent() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="max-w-md w-full bg-white rounded-[32px] shadow-2xl p-10 border border-slate-100">
+    <div className="min-h-screen bg-slate-100 flex items-center justify-center p-4">
+      {/* Containeri Responsive: w-[95%] në telefon, max-w-md në laptop */}
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }} 
+        animate={{ opacity: 1, scale: 1 }} 
+        className="w-[95%] sm:w-full max-w-md bg-white rounded-[32px] shadow-2xl p-6 md:p-10 border border-slate-200"
+      >
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-blue-600 p-3.5 rounded-2xl text-white mb-4 shadow-xl shadow-blue-100"><GraduationCap size={32} /></div>
-          <h2 className="text-2xl font-black text-slate-800 tracking-tight">{view === 'login' ? "Mirësevini" : view === 'register' ? "Regjistrohuni" : "Fjalëkalimi i ri"}</h2>
+          <div className="bg-blue-600 p-4 rounded-2xl text-white mb-4 shadow-xl shadow-blue-200">
+            <GraduationCap size={32} />
+          </div>
+          <h2 className="text-2xl md:text-3xl font-black text-slate-900 tracking-tight text-center italic uppercase">
+            {view === 'login' ? "Mirësevini" : view === 'register' ? "Regjistrohuni" : "Fjalëkalimi i ri"}
+          </h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2">AI Teaching Assistant</p>
         </div>
+
         <form onSubmit={handleAuth} className="space-y-4">
           <AnimatePresence mode="wait">
-            {error && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-center gap-2"><AlertCircle size={16}/>{error}</motion.div>}
-            {message && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="bg-green-50 text-green-600 p-4 rounded-2xl text-xs font-bold border border-green-100 flex items-center gap-2"><CheckCircle size={16}/>{message}</motion.div>}
+            {error && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-red-50 text-red-600 p-4 rounded-2xl text-xs font-bold border border-red-100 flex items-center gap-2"><AlertCircle size={16}/>{error}</motion.div>}
+            {message && <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} className="bg-green-50 text-green-600 p-4 rounded-2xl text-xs font-bold border border-green-100 flex items-center gap-2"><CheckCircle size={16}/>{message}</motion.div>}
           </AnimatePresence>
+
           {view === 'register' && (
-            <div className="relative"><User className="absolute left-4 top-4 text-slate-400" size={18} /><input type="text" placeholder="Emri i plotë" required className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" onChange={(e) => setFullName(e.target.value)} /></div>
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+              <input type="text" placeholder="Emri i plotë" required className="w-full pl-12 pr-4 py-4 bg-white border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 text-slate-900 font-bold text-sm transition-all shadow-sm" onChange={(e) => setFullName(e.target.value)} />
+            </div>
           )}
+
           {view !== 'update_password' && (
-            <div className="relative"><Mail className="absolute left-4 top-4 text-slate-400" size={18} /><input type="email" placeholder="Email adresa" required className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" onChange={(e) => setEmail(e.target.value)} /></div>
+            <div className="relative group">
+              <Mail className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+              <input type="email" placeholder="Email adresa" required className="w-full pl-12 pr-4 py-4 bg-white border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 text-slate-900 font-bold text-sm transition-all shadow-sm" onChange={(e) => setEmail(e.target.value)} />
+            </div>
           )}
-          <div className="relative"><Lock className="absolute left-4 top-4 text-slate-400" size={18} /><input type={showPassword ? "text" : "password"} placeholder="Fjalëkalimi" required className="w-full pl-12 pr-12 py-4 bg-slate-50 border border-slate-200 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500 text-sm" onChange={(e) => setPassword(e.target.value)} /><button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-4 text-slate-400 hover:text-blue-600">{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button></div>
-          {view === 'login' && (<div className="flex justify-end"><button type="button" onClick={handleForgotPassword} className="text-[11px] font-bold text-slate-400 hover:text-blue-600 uppercase tracking-widest">Harrova fjalëkalimin</button></div>)}
-          <button disabled={loading} className="w-full bg-blue-600 text-white font-black py-4 rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 disabled:opacity-50 active:scale-95 text-[13px] uppercase tracking-widest">{loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : (view === 'login' ? "Hyr" : view === 'register' ? "Regjistrohu" : "Ruaj")}</button>
+
+          <div className="relative group">
+            <Lock className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-600 transition-colors" size={18} />
+            <input type={showPassword ? "text" : "password"} placeholder="Fjalëkalimi" required className="w-full pl-12 pr-12 py-4 bg-white border-2 border-slate-100 rounded-2xl outline-none focus:border-blue-500 text-slate-900 font-bold text-sm transition-all shadow-sm" onChange={(e) => setPassword(e.target.value)} />
+            <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-blue-600">
+              {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+            </button>
+          </div>
+
+          {view === 'login' && (
+            <div className="flex justify-end px-1">
+              <button type="button" onClick={handleForgotPassword} className="text-[10px] font-black text-slate-400 hover:text-blue-600 uppercase tracking-tighter transition-colors">Harrova fjalëkalimin?</button>
+            </div>
+          )}
+
+          <button 
+            disabled={loading} 
+            className="w-full bg-blue-600 text-white font-black py-4 md:py-5 rounded-2xl hover:bg-blue-700 shadow-xl shadow-blue-100 disabled:opacity-50 active:scale-[0.98] transition-all text-xs md:text-sm uppercase tracking-widest mt-4"
+          >
+            {loading ? <Loader2 className="animate-spin mx-auto" size={20} /> : (view === 'login' ? "Hyr në sistem" : view === 'register' ? "Krijo Llogarinë" : "Ruaj Fjalëkalimin")}
+          </button>
         </form>
+
         {view !== 'update_password' && (
-          <div className="mt-8 text-center border-t border-slate-50 pt-6"><button onClick={() => setView(view === 'login' ? 'register' : 'login')} className="text-[12px] font-bold text-slate-400 hover:text-blue-600">{view === 'login' ? "Krijo llogari" : "Hyr këtu"}</button></div>
+          <div className="mt-8 text-center border-t border-slate-100 pt-6">
+            <button 
+              onClick={() => setView(view === 'login' ? 'register' : 'login')} 
+              className="text-[11px] font-black text-slate-500 hover:text-blue-600 uppercase tracking-widest transition-colors"
+            >
+              {view === 'login' ? "Nuk keni llogari? Regjistrohuni" : "Keni llogari? Hyr këtu"}
+            </button>
+          </div>
         )}
       </motion.div>
     </div>
@@ -88,7 +133,7 @@ function LoginContent() {
 
 export default function AuthPage() {
   return (
-    <Suspense fallback={<div>Loading...</div>}>
+    <Suspense fallback={<div className="h-screen flex items-center justify-center font-black uppercase italic text-blue-600 animate-pulse">Loading...</div>}>
       <LoginContent />
     </Suspense>
   );

@@ -68,9 +68,11 @@ export default function Dashboard() {
 
   useEffect(() => {
     const handleClickOutside = (event) => {
+      // SHTESA: Shtohet kontrolli nese modal ose tab-i eshte aktiv para resetit
       if (activeTab === 'grading' && 
           gradingAreaRef.current && 
-          !gradingAreaRef.current.contains(event.target)) {
+          !gradingAreaRef.current.contains(event.target) &&
+          !result && !loading) { // Mos e reseto nese ka rezultat ose po ngarkon
         resetGradingFields();
       }
       if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target)) {
@@ -79,7 +81,7 @@ export default function Dashboard() {
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [activeTab, isProfileOpen]);
+  }, [activeTab, isProfileOpen, result, loading]);
 
   const fetchHistory = async (userId) => {
     const { data, error } = await supabase
@@ -103,6 +105,7 @@ export default function Dashboard() {
           avatarPreview: user.user_metadata?.avatar_url || null
         }));
         
+        // SHTESA: Marrim statistikat fillestare
         const { count } = await supabase
           .from('conversations')
           .select('*', { count: 'exact', head: true })
@@ -134,10 +137,13 @@ export default function Dashboard() {
 
   const deleteConversation = async (e, id) => {
     e.stopPropagation();
+    // SHTESA: Konfirmim para fshirjes
+    if(!confirm("Are you sure?")) return;
+    
     const { error } = await supabase.from('conversations').delete().eq('id', id);
     if (error) { alert("Error: " + error.message); return; }
     setConversations(conversations.filter(c => c.id !== id));
-    setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations - 1 }));
+    setStats(prev => ({ ...prev, totalEvaluations: Math.max(0, prev.totalEvaluations - 1) }));
   };
 
   const loadConversation = async (conv) => {
@@ -147,7 +153,12 @@ export default function Dashboard() {
         .from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true });
       if (msgError) throw msgError;
       if (messages && messages.length >= 2) {
-        try { setResult(JSON.parse(messages[1].content)); } catch (e) { setResult({ feedback: messages[1].content, score: "N/A" }); }
+        try { 
+          const content = JSON.parse(messages[1].content);
+          setResult(content); 
+        } catch (e) { 
+          setResult({ feedback: messages[1].content, score: "N/A" }); 
+        }
         const userText = messages[0].content;
         if (userText.includes('|')) {
             const parts = userText.split('|');
@@ -182,20 +193,22 @@ export default function Dashboard() {
 
       if (data.success) {
         setResult(data.data);
+        // SHTESA: Ruajtja ne Supabase me handle per error-et
         const { data: convData, error: convError } = await supabase
           .from('conversations')
           .insert([{ user_id: user.id, title: `Evaluation: ${inputData.questionText.substring(0, 30)}...` }])
           .select()
           .single();
 
-        if (!convError) {
-          await supabase.from('messages').insert([
-            { conversation_id: convData.id, role: 'user', content: `Question: ${inputData.questionText} | Answer: ${inputData.studentAnswer}` },
-            { conversation_id: convData.id, role: 'assistant', content: JSON.stringify(data.data) }
-          ]);
-          setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1 }));
-          fetchHistory(user.id);
-        }
+        if (convError) throw convError;
+
+        await supabase.from('messages').insert([
+          { conversation_id: convData.id, role: 'user', content: `Question: ${inputData.questionText} | Answer: ${inputData.studentAnswer}` },
+          { conversation_id: convData.id, role: 'assistant', content: JSON.stringify(data.data) }
+        ]);
+        
+        setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1 }));
+        fetchHistory(user.id);
       } else {
         throw new Error(data.error || "Evaluation failed.");
       }
@@ -213,7 +226,7 @@ export default function Dashboard() {
       let avatarUrl = profileForm.avatarPreview;
       if (profileForm.avatarFile) {
         const fileExt = profileForm.avatarFile.name.split('.').pop();
-        const fileName = `${user.id}-${Math.random()}.${fileExt}`;
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`; // SHTESA: Perdorim Date.now() per unicitet
         const filePath = `avatars/${fileName}`;
         const { error: uploadError } = await supabase.storage.from('profiles').upload(filePath, profileForm.avatarFile);
         if (uploadError) throw uploadError;
@@ -355,6 +368,13 @@ export default function Dashboard() {
 
             {activeTab === 'grading' && (
               <motion.div key="grading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {/* SHTESA: Shtohet Alert per Error-et */}
+                {error && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic">
+                    {error}
+                  </motion.div>
+                )}
+
                 <div ref={gradingAreaRef} className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
                   <section className="bg-white p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> Task Details</h2>
