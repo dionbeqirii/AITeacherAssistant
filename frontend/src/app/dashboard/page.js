@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileText, GraduationCap, BarChart3, 
   Send, Sparkles, BrainCircuit, Database, RefreshCw, LogOut, ChevronRight,
   Clock, Construction, Lock, History, CheckCircle2, AlertTriangle, Trash2,
-  User, Bell, X, Camera, Shield, UserCircle, Menu 
+  User, Bell, X, Camera, Shield, UserCircle, Menu, Download, BookOpen, Layers, ListOrdered
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -22,7 +22,7 @@ export default function Dashboard() {
   const [authLoading, setAuthLoading] = useState(true);
   const [stats, setStats] = useState({ totalEvaluations: 0 });
   const [conversations, setConversations] = useState([]);
-  const [isSidebarOpen, setIsSidebarOpen] = useState(false); // Mobile sidebar state
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const router = useRouter();
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -39,12 +39,23 @@ export default function Dashboard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [statusIndex, setStatusIndex] = useState(0);
+  
+  // State per AI Grading
   const [inputData, setInputData] = useState({ 
     studentAnswer: '', 
     questionText: '', 
     rubric: '', 
     subject: 'Programming' 
   });
+
+  // State per Exam Generation
+  const [examInput, setExamInput] = useState({
+    subject: '',
+    level: '',
+    topic: '',
+    numQuestions: 5
+  });
+  const [examQuestions, setExamQuestions] = useState(null);
 
   const gradingAreaRef = useRef(null);
 
@@ -129,6 +140,54 @@ export default function Dashboard() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
+  };
+
+  // LOGJIKA PER GENERATE EXAM
+  const handleGenerateExam = async () => {
+    if (!examInput.topic || !examInput.subject) {
+      alert("Ju lutem plotësoni Lëndën dhe Temën.");
+      return;
+    }
+    setLoading(true);
+    setExamQuestions(null);
+    try {
+      const res = await fetch('/api/v1/exams/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(examInput),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setExamQuestions(data.questions);
+      } else {
+        alert("Gabim gjatë gjenerimit: " + data.error);
+      }
+    } catch (err) {
+      alert("Gabim teknik: " + err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // LOGJIKA PER DOWNLOAD WORD
+  const handleDownloadWord = async () => {
+    try {
+      const res = await fetch('/api/v1/exams/download', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...examInput, questions: examQuestions }),
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Provim_${examInput.subject}_${examInput.topic}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      alert("Gabim gjatë shkarkimit: " + err.message);
+    }
   };
 
   const deleteConversation = async (e, id) => {
@@ -276,7 +335,6 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans relative overflow-hidden">
-      {/* Sidebar - HIDDEN ON MOBILE, TOGGLEABLE */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 p-6 flex flex-col shadow-xl transition-transform duration-300 md:relative md:translate-x-0 md:shadow-sm shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="flex items-center justify-between mb-10">
             <div className="flex items-center gap-2">
@@ -290,13 +348,20 @@ export default function Dashboard() {
         <nav className="space-y-2 flex-1">
           <button onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><LayoutDashboard size={20} /> Dashboard</button>
           <button onClick={() => { setActiveTab('grading'); resetGradingFields(); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'grading' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><FileText size={20} /> AI Grading</button>
-          <button onClick={() => { setActiveTab('exams'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'exams' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><Sparkles size={20} /> Exams</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
+<button 
+  onClick={() => { 
+    router.push('/dashboard/exams'); // Kjo bën navigimin e vërtetë
+    setIsSidebarOpen(false); 
+  }} 
+  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-100 text-slate-500"
+>
+  <Sparkles size={20} /> Exams
+</button>
           <button onClick={() => { setActiveTab('analytics_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'analytics_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Analytics</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
         </nav>
         <button onClick={handleLogout} className="mt-auto flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold uppercase text-xs italic tracking-widest"><LogOut size={20} /> Logout</button>
       </aside>
 
-      {/* Overlay for mobile sidebar */}
       {isSidebarOpen && <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
 
       <div className="flex-1 flex flex-col overflow-hidden w-full">
@@ -329,7 +394,6 @@ export default function Dashboard() {
           <AnimatePresence mode="wait">
             {activeTab === 'dashboard' && (
               <motion.div key="dash" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {/* RESPONSIVE GRID FOR STATS */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 md:gap-6 mb-10 text-center">
                   <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm"><p className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-wider">Total Evaluations</p><h4 className="text-2xl md:text-3xl font-black mt-1 tracking-tighter">{stats.totalEvaluations}</h4></div>
                   <div className="bg-white p-6 rounded-2xl border border-slate-100 shadow-sm border-b-blue-500 border-b-4"><p className="text-slate-500 text-[10px] md:text-xs font-bold uppercase tracking-wider">Class Average</p><h4 className="text-2xl md:text-3xl font-black mt-1 text-blue-600 tracking-tighter">78.4%</h4></div>
@@ -346,7 +410,6 @@ export default function Dashboard() {
                     {error}
                   </motion.div>
                 )}
-
                 <div ref={gradingAreaRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 mb-12">
                   <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> Task Details</h2>
@@ -419,15 +482,87 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {(activeTab === 'exams' || activeTab === 'analytics_soon') && (
+            {/* TAB-I I RI PER EXAMS */}
+            {activeTab === 'exams' && (
+              <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  {/* KOLONA E INPUTIT */}
+                  <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
+                    <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> Generate Exam</h2>
+                    <div className="space-y-5">
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Subject</label>
+                        <input type="text" placeholder="e.g. Java Programming" value={examInput.subject} onChange={(e) => setExamInput({...examInput, subject: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Level</label>
+                        <input type="text" placeholder="e.g. 2nd Year University" value={examInput.level} onChange={(e) => setExamInput({...examInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Topic</label>
+                        <input type="text" placeholder="e.g. Loops & Arrays" value={examInput.topic} onChange={(e) => setExamInput({...examInput, topic: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> Questions Count</label>
+                        <input type="number" value={examInput.numQuestions} onChange={(e) => setExamInput({...examInput, numQuestions: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      
+                      <button onClick={handleGenerateExam} disabled={loading} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                        {loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}
+                        <span>Gjenero Pyetjet</span>
+                      </button>
+                    </div>
+                  </section>
+
+                  {/* KOLONA E SHFAQJES SE PYETJEVE */}
+                  <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><LayoutDashboard size={18} /> Exam Preview</h3>
+                      {examQuestions && (
+                        <button onClick={handleDownloadWord} className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-green-100">
+                          <Download size={14} /> Download Word
+                        </button>
+                      )}
+                    </div>
+                    
+                    <div className="p-8 flex-1 overflow-y-auto">
+                      <AnimatePresence mode="wait">
+                        {loading ? (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col items-center justify-center space-y-4 opacity-40">
+                             <BrainCircuit size={48} className="text-blue-600 animate-bounce" />
+                             <p className="font-black uppercase italic text-xs tracking-widest animate-pulse">AI po krijon pyetjet...</p>
+                          </motion.div>
+                        ) : examQuestions ? (
+                          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-6">
+                            {examQuestions.map((q, idx) => (
+                              <div key={idx} className="p-5 bg-slate-50 border border-slate-100 rounded-2xl">
+                                <span className="text-[10px] font-black text-blue-500 uppercase italic mb-1 block">Question {idx + 1}</span>
+                                <p className="text-slate-800 font-bold italic">{q}</p>
+                              </div>
+                            ))}
+                          </motion.div>
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20">
+                            <Construction size={64} />
+                            <p className="font-black uppercase italic text-xs tracking-widest">Plotëso formën për të filluar</p>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </section>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'analytics_soon' && (
               <motion.div key="soon" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex items-center justify-center py-10">
                 <div className="text-center bg-white p-8 md:p-16 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-2xl max-w-lg relative overflow-hidden mx-4">
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-600"></div>
                   <div className="bg-blue-50 w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-600">
-                    {activeTab === 'exams' ? <Construction size={32} /> : <Lock size={32} />}
+                    <Lock size={32} />
                   </div>
                   <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-4 tracking-tighter uppercase italic">Coming Soon...</h2>
-                  <p className="text-sm md:text-base text-slate-500 font-medium leading-relaxed italic">The <span className="text-blue-600 font-bold italic">{activeTab === 'exams' ? "Exam Generation" : "Detailed Analytics"}</span> module is under development.</p>
+                  <p className="text-sm md:text-base text-slate-500 font-medium leading-relaxed italic">The <span className="text-blue-600 font-bold italic">Detailed Analytics</span> module is under development.</p>
                   <div className="mt-8 flex items-center justify-center gap-2 text-blue-400 font-black text-[10px] md:text-xs uppercase tracking-widest animate-pulse italic"><Clock size={16} /> Work in progress</div>
                 </div>
               </motion.div>
