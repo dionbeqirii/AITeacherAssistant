@@ -164,19 +164,30 @@ export default function Dashboard() {
       setError("Please fill in at least the Question and Answer.");
       return;
     }
-    setLoading(true); setError(null); setResult(null);
+
+    setLoading(true); 
+    setError(null); 
+    setResult(null);
+
     try {
-      const res = await fetch('http://127.0.0.1:3000/api/v1/grading/grade', {
+      const res = await fetch('/api/v1/grading/grade', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(inputData),
       });
+
       if (!res.ok) throw new Error(`Server returned status ${res.status}`);
+      
       const data = await res.json();
+
       if (data.success) {
         setResult(data.data);
         const { data: convData, error: convError } = await supabase
-          .from('conversations').insert([{ user_id: user.id, title: `Evaluation: ${inputData.questionText.substring(0, 30)}...` }]).select().single();
+          .from('conversations')
+          .insert([{ user_id: user.id, title: `Evaluation: ${inputData.questionText.substring(0, 30)}...` }])
+          .select()
+          .single();
+
         if (!convError) {
           await supabase.from('messages').insert([
             { conversation_id: convData.id, role: 'user', content: `Question: ${inputData.questionText} | Answer: ${inputData.studentAnswer}` },
@@ -185,8 +196,14 @@ export default function Dashboard() {
           setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1 }));
           fetchHistory(user.id);
         }
-      } else { throw new Error(data.error || "Evaluation failed."); }
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+      } else {
+        throw new Error(data.error || "Evaluation failed.");
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleProfileUpdate = async (e) => {
