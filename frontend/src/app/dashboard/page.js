@@ -57,6 +57,15 @@ export default function Dashboard() {
   });
   const [examQuestions, setExamQuestions] = useState(null);
 
+  // State per Learning Materials
+  const [materialInput, setMaterialInput] = useState({
+    subject: '',
+    level: '',
+    topic: '',
+    materialType: 'summary'
+  });
+  const [generatedMaterial, setGeneratedMaterial] = useState(null);
+
   const gradingAreaRef = useRef(null);
 
   const loadingMessages = [
@@ -169,26 +178,98 @@ export default function Dashboard() {
     }
   };
 
-  // LOGJIKA PER DOWNLOAD WORD
-  const handleDownloadWord = async () => {
+  // LOGJIKA PER DOWNLOAD WORD (EXAM)
+const handleDownloadMaterialPDF = () => {
+  const doc = new jsPDF();
+  
+  // Konfigurimi i stilit
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(20);
+  doc.setTextColor(30, 58, 138); // Ngjyrë Blu (Slate-900)
+  doc.text(materialInput.subject.toUpperCase(), 20, 20);
+  
+  doc.setFontSize(14);
+  doc.setTextColor(100);
+  doc.text(`Tema: ${materialInput.topic}`, 20, 30);
+  
+  doc.setLineWidth(0.5);
+  doc.line(20, 35, 190, 35);
+  
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(11);
+  doc.setTextColor(60);
+  
+  // Rregullimi i tekstit që të mos dalë jashtë faqes
+  const splitText = doc.splitTextToSize(generatedMaterial, 170);
+  doc.text(splitText, 20, 45);
+  
+  doc.save(`Material_${materialInput.topic}.pdf`);
+};
+
+  // LOGJIKA PER GENERATE LEARNING MATERIALS
+// LOGJIKA PER GENERATE LEARNING MATERIALS
+  const handleGenerateMaterials = async () => {
+    if (!materialInput.topic || !materialInput.subject) {
+      alert("Ju lutem plotësoni Lëndën dhe Temën.");
+      return;
+    }
+    setLoading(true);
+    setGeneratedMaterial(null);
     try {
-      const res = await fetch('/api/v1/exams/download', {
+      const res = await fetch('/api/v1/materials/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...examInput, questions: examQuestions }),
+        body: JSON.stringify(materialInput),
       });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Provim_${examInput.subject}_${examInput.topic}.docx`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const data = await res.json();
+      
+      if (data.success) {
+        // NDRYSHIMI: Përdorim .content sepse ashtu e dërgon API
+        setGeneratedMaterial(data.content); 
+      } else {
+        alert("Gabim gjatë gjenerimit: " + data.error);
+      }
     } catch (err) {
-      alert("Gabim gjatë shkarkimit: " + err.message);
+      alert("Gabim teknik: " + err.message);
+    } finally {
+      setLoading(false);
     }
   };
+
+  // LOGJIKA PER DOWNLOAD WORD (MATERIALS)
+// LOGJIKA PER DOWNLOAD WORD (MATERIALS) - FRONTEND ONLY
+  const handleDownloadMaterialWord = () => {
+    try {
+      const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' "+
+        "xmlns:w='urn:schemas-microsoft-com:office:word' "+
+        "xmlns='http://www.w3.org/TR/REC-html40'>"+
+        "<head><meta charset='utf-8'><title>Export HTML to Doc</title></head><body>";
+      const footer = "</body></html>";
+      
+      // Krijojmë përmbajtjen me pak stilim që të duket mirë në Word
+      const html = header + 
+                   "<h1 style='color: #1e3a8a; font-family: Arial;'>"+ materialInput.subject.toUpperCase() +"</h1>" +
+                   "<h3 style='color: #64748b; font-family: Arial;'>Tema: "+ materialInput.topic +"</h3>" +
+                   "<hr>" +
+                   "<p style='font-family: Georgia; line-height: 1.6; white-space: pre-wrap;'>"+ generatedMaterial +"</p>" + 
+                   footer;
+
+      const blob = new Blob(['\ufeff', html], {
+        type: 'application/msword'
+      });
+      
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Material_${materialInput.topic}.doc`; // E ruajmë si .doc (format klasik)
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Gabim gjatë shkarkimit: " + err.message);
+    }
+  };
 
   const deleteConversation = async (e, id) => {
     e.stopPropagation();
@@ -348,15 +429,16 @@ export default function Dashboard() {
         <nav className="space-y-2 flex-1">
           <button onClick={() => { setActiveTab('dashboard'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'dashboard' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><LayoutDashboard size={20} /> Dashboard</button>
           <button onClick={() => { setActiveTab('grading'); resetGradingFields(); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'grading' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><FileText size={20} /> AI Grading</button>
-<button 
-  onClick={() => { 
-    router.push('/dashboard/exams'); // Kjo bën navigimin e vërtetë
-    setIsSidebarOpen(false); 
-  }} 
-  className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-100 text-slate-500"
->
-  <Sparkles size={20} /> Exams
-</button>
+          <button 
+            onClick={() => { 
+              router.push('/dashboard/exams');
+              setIsSidebarOpen(false); 
+            }} 
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all hover:bg-slate-100 text-slate-500"
+          >
+            <Sparkles size={20} /> AI Exams
+          </button>
+          <button onClick={() => { setActiveTab('learning_materials'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'learning_materials' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><BookOpen size={20} />AI Materials</button>
           <button onClick={() => { setActiveTab('analytics_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'analytics_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Analytics</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
         </nav>
         <button onClick={handleLogout} className="mt-auto flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold uppercase text-xs italic tracking-widest"><LogOut size={20} /> Logout</button>
@@ -482,11 +564,10 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* TAB-I I RI PER EXAMS */}
+            {/* TAB-I PER EXAMS */}
             {activeTab === 'exams' && (
               <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                  {/* KOLONA E INPUTIT */}
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> Generate Exam</h2>
                     <div className="space-y-5">
@@ -506,7 +587,6 @@ export default function Dashboard() {
                         <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> Questions Count</label>
                         <input type="number" value={examInput.numQuestions} onChange={(e) => setExamInput({...examInput, numQuestions: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
                       </div>
-                      
                       <button onClick={handleGenerateExam} disabled={loading} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
                         {loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}
                         <span>Gjenero Pyetjet</span>
@@ -514,7 +594,6 @@ export default function Dashboard() {
                     </div>
                   </section>
 
-                  {/* KOLONA E SHFAQJES SE PYETJEVE */}
                   <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
                     <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                       <h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><LayoutDashboard size={18} /> Exam Preview</h3>
@@ -524,7 +603,6 @@ export default function Dashboard() {
                         </button>
                       )}
                     </div>
-                    
                     <div className="p-8 flex-1 overflow-y-auto">
                       <AnimatePresence mode="wait">
                         {loading ? (
@@ -554,16 +632,75 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {activeTab === 'analytics_soon' && (
-              <motion.div key="soon" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex items-center justify-center py-10">
-                <div className="text-center bg-white p-8 md:p-16 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-2xl max-w-lg relative overflow-hidden mx-4">
-                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-600"></div>
-                  <div className="bg-blue-50 w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-600">
-                    <Lock size={32} />
-                  </div>
-                  <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-4 tracking-tighter uppercase italic">Coming Soon...</h2>
-                  <p className="text-sm md:text-base text-slate-500 font-medium leading-relaxed italic">The <span className="text-blue-600 font-bold italic">Detailed Analytics</span> module is under development.</p>
-                  <div className="mt-8 flex items-center justify-center gap-2 text-blue-400 font-black text-[10px] md:text-xs uppercase tracking-widest animate-pulse italic"><Clock size={16} /> Work in progress</div>
+            {/* TAB-I PER LEARNING MATERIALS */}
+            {activeTab === 'learning_materials' && (
+              <motion.div key="learning_materials" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                  <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
+                    <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><BookOpen className="text-blue-500" size={20} /> Gjenero Materiale</h2>
+                    <div className="space-y-5">
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label>
+                        <input type="text" placeholder="p.sh. Matematikë" value={materialInput.subject} onChange={(e) => setMaterialInput({...materialInput, subject: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label>
+                        <input type="text" placeholder="p.sh. Klasa 10" value={materialInput.level} onChange={(e) => setMaterialInput({...materialInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <div>
+                        <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label>
+                        <input type="text" placeholder="p.sh. Trigonometria" value={materialInput.topic} onChange={(e) => setMaterialInput({...materialInput, topic: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                      </div>
+                      <button onClick={handleGenerateMaterials} disabled={loading} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                        {loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}
+                        <span>Gjenero Materialin</span>
+                      </button>
+                    </div>
+                  </section>
+
+                  <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
+                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                      <h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><BookOpen size={18} /> Material Preview</h3>
+{generatedMaterial && (
+  <div className="flex gap-2">
+    <button 
+      onClick={handleDownloadMaterialWord}
+      className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+    >
+      <Download size={14} /> Word
+    </button>
+    
+    <button 
+      onClick={handleDownloadMaterialPDF}
+      className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"
+    >
+      <FileText size={14} /> Download PDF
+    </button>
+  </div>
+)}
+                    </div>
+                    <div className="p-8 flex-1 overflow-y-auto bg-white">
+                      <AnimatePresence mode="wait">
+                        {loading ? (
+                          <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-40">
+                             <BrainCircuit size={48} className="text-blue-600 animate-bounce" />
+                             <p className="font-black uppercase italic text-xs tracking-widest animate-pulse">AI po shkruan materialin...</p>
+                          </div>
+                        ) : generatedMaterial ? (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="prose max-w-none">
+                            <div className="whitespace-pre-wrap text-slate-700 font-medium leading-relaxed italic border-l-4 border-blue-500 pl-6">
+                              {generatedMaterial}
+                            </div>
+                          </motion.div>
+                        ) : (
+                          <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20">
+                            <BookOpen size={64} />
+                            <p className="font-black uppercase italic text-xs tracking-widest">Gati për gjenerim</p>
+                          </div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  </section>
                 </div>
               </motion.div>
             )}
