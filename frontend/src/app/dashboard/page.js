@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { jsPDF } from "jspdf";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, FileText, GraduationCap, BarChart3, 
@@ -674,7 +675,7 @@ const handleDownloadMaterialPDF = () => {
       onClick={handleDownloadMaterialPDF}
       className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"
     >
-      <FileText size={14} /> Download PDF
+      <FileText size={14} /> PDF
     </button>
   </div>
 )}
