@@ -6,7 +6,8 @@ import {
   LayoutDashboard, FileText, GraduationCap, BarChart3, 
   Send, Sparkles, BrainCircuit, Database, RefreshCw, LogOut, ChevronRight,
   Clock, Construction, Lock, History, CheckCircle2, AlertTriangle, Trash2,
-  User, Bell, X, Camera, Shield, UserCircle, Menu, Download, BookOpen, Layers, ListOrdered
+  User, Bell, X, Camera, Shield, UserCircle, Menu, Download, BookOpen, Layers, ListOrdered,
+  MessageSquare, Star
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -56,6 +57,49 @@ export default function Dashboard() {
 
   // ─── EDGE CASE 3: error specifik per API / network ───────────────────────
   const [apiError, setApiError] = useState(null);
+
+  // ─── FEEDBACK MODAL STATE & LOGIC ───────────────────────────────────────
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [feedbackForm, setFeedbackForm] = useState({ rating: 0, message: '' });
+  const [feedbackStatus, setFeedbackStatus] = useState({ type: 'idle', text: '' }); // idle, loading, success, error
+  const feedbackRef = useRef(null);
+
+  const handleFeedbackSubmit = async (e) => {
+    e.preventDefault();
+    if (feedbackForm.rating === 0) {
+      setFeedbackStatus({ type: 'error', text: 'Ju lutem zgjidhni një vlerësim me yje!' });
+      return;
+    }
+    if (!feedbackForm.message.trim()) {
+      setFeedbackStatus({ type: 'error', text: 'Mesazhi nuk mund të jetë bosh!' });
+      return;
+    }
+
+    setFeedbackStatus({ type: 'loading', text: '' });
+    try {
+      const res = await fetch('/api/v1/feedback', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          rating: feedbackForm.rating,
+          message: feedbackForm.message,
+          userId: user.id,
+          fullName: profileForm.fullName || user.email
+        })
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Dërgimi dështoi.");
+
+      setFeedbackStatus({ type: 'success', text: 'Feedback-u u dërgua me sukses! Faleminderit.' });
+      setTimeout(() => {
+        setIsFeedbackOpen(false);
+        setFeedbackForm({ rating: 0, message: '' });
+        setFeedbackStatus({ type: 'idle', text: '' });
+      }, 2500);
+    } catch (err) {
+      setFeedbackStatus({ type: 'error', text: err.message });
+    }
+  };
 
   // State per AI Grading
   const [inputData, setInputData] = useState({ 
@@ -114,10 +158,13 @@ export default function Dashboard() {
       if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target)) {
         setIsProfileOpen(false);
       }
+      if (isFeedbackOpen && feedbackRef.current && !feedbackRef.current.contains(event.target)) {
+        setIsFeedbackOpen(false);
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [activeTab, isProfileOpen, result, loading]);
+  }, [activeTab, isProfileOpen, isFeedbackOpen, result, loading]);
 
   const fetchHistory = async (userId) => {
     const { data, error } = await supabase
@@ -549,6 +596,77 @@ export default function Dashboard() {
     </AnimatePresence>
   ), [isProfileOpen, profileForm, loading, user]);
 
+  const renderedFeedbackModal = useMemo(() => (
+    <AnimatePresence>
+      {isFeedbackOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+          <motion.div ref={feedbackRef} initial={{ scale: 0.97, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.97, opacity: 0, y: 10 }} className="relative bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden border border-slate-100">
+            
+            <div className="bg-slate-900 p-8 text-white text-center relative">
+              <button onClick={() => setIsFeedbackOpen(false)} className="absolute top-4 right-4 p-2 text-slate-400 hover:text-white bg-white/5 hover:bg-white/10 rounded-full transition-all"><X size={20}/></button>
+              <div className="w-16 h-16 mx-auto mb-4 bg-blue-500/20 rounded-2xl flex items-center justify-center border border-blue-500/30">
+                <MessageSquare size={32} className="text-blue-400" />
+              </div>
+              <h3 className="text-xl font-black uppercase tracking-tight italic">Na dërgoni Feedback</h3>
+              <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-2">Mendimi juaj na ndihmon!</p>
+            </div>
+
+            <form onSubmit={handleFeedbackSubmit} className="p-6 md:p-8">
+              
+              {/* Star Rating System */}
+              <div className="flex justify-center gap-2 mb-6">
+                {[1, 2, 3, 4, 5].map((star) => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setFeedbackForm({ ...feedbackForm, rating: star })}
+                    className={`p-2 transition-all hover:scale-110 active:scale-95 ${feedbackForm.rating >= star ? 'text-yellow-400 drop-shadow-md' : 'text-slate-200'}`}
+                  >
+                    <Star size={32} fill={feedbackForm.rating >= star ? "currentColor" : "none"} />
+                  </button>
+                ))}
+              </div>
+
+              <div>
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 italic">Mesazhi ose Sugjerimi</label>
+                <textarea 
+                  rows="4" 
+                  value={feedbackForm.message} 
+                  onChange={(e) => setFeedbackForm({...feedbackForm, message: e.target.value})} 
+                  placeholder="Çfarë mund të përmirësojmë?"
+                  className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Status Messages */}
+              <AnimatePresence>
+                {feedbackStatus.type !== 'idle' && (
+                  <motion.div initial={{ opacity: 0, height: 0 }} animate={{ opacity: 1, height: 'auto' }} className="mt-4">
+                    <p className={`text-[10px] font-black uppercase tracking-widest italic text-center p-2 rounded-xl ${
+                      feedbackStatus.type === 'error' ? 'text-red-500 bg-red-50' : 
+                      feedbackStatus.type === 'success' ? 'text-green-500 bg-green-50' : 'text-blue-500 bg-blue-50 animate-pulse'
+                    }`}>
+                      {feedbackStatus.type === 'loading' ? 'Po dërgohet...' : feedbackStatus.text}
+                    </p>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              <div className="pt-6 flex gap-3">
+                <button type="button" onClick={() => setIsFeedbackOpen(false)} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all">Anulo</button>
+                <button type="submit" disabled={feedbackStatus.type === 'loading'} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-200 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                  <Send size={16} /> Dërgo
+                </button>
+              </div>
+            </form>
+
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  ), [isFeedbackOpen, feedbackForm, feedbackStatus]);
+
   if (authLoading || !user) return <div className="h-screen flex items-center justify-center bg-slate-50 font-bold uppercase italic tracking-widest text-blue-600">Authenticating...</div>;
 
   return (
@@ -578,7 +696,15 @@ export default function Dashboard() {
           <button onClick={() => { setActiveTab('learning_materials'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'learning_materials' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><BookOpen size={20} /> AI Materials</button>
           <button onClick={() => { setActiveTab('analytics_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'analytics_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Analytics</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
         </nav>
-        <button onClick={handleLogout} className="mt-auto flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold uppercase text-xs italic tracking-widest"><LogOut size={20} /> Logout</button>
+        
+        <div className="mt-auto pt-6 border-t border-slate-100 flex flex-col gap-2">
+          <button onClick={() => { setIsFeedbackOpen(true); setIsSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all font-bold uppercase text-xs italic tracking-widest">
+            <MessageSquare size={20} /> Feedback
+          </button>
+          <button onClick={handleLogout} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold uppercase text-xs italic tracking-widest">
+            <LogOut size={20} /> Logout
+          </button>
+        </div>
       </aside>
 
       {isSidebarOpen && <div className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40 md:hidden" onClick={() => setIsSidebarOpen(false)} />}
@@ -940,6 +1066,7 @@ export default function Dashboard() {
         </main>
       </div>
       {renderedProfileModal}
+      {renderedFeedbackModal}
     </div>
   );
 }
