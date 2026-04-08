@@ -38,7 +38,7 @@ export async function POST(req) {
         'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "llama-3.3-70b-versatile", // Sugjeroj 70B për cilësi më të lartë në materiale komplekse
+        model: "openai/gpt-oss-120b", // Sugjeroj 70B për cilësi më të lartë në materiale komplekse
         messages: [
           { role: "system", content: systemPrompt },
           { role: "user", content: userPrompt }

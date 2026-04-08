@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { jsPDF } from "jspdf";
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
@@ -16,6 +16,12 @@ const AnalyticsChart = dynamic(() => import('../../components/AnalyticsChart'), 
   ssr: false,
   loading: () => <div className="h-[350px] w-full bg-slate-100 animate-pulse rounded-2xl"></div>
 });
+
+// ─── KONSTANTE PER VALIDIM ────────────────────────────────────────────────────
+const MAX_QUESTION_LENGTH = 2000;
+const MAX_ANSWER_LENGTH = 5000;
+const MAX_SUBJECT_LENGTH = 100;
+const MAX_TOPIC_LENGTH = 200;
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -40,7 +46,17 @@ export default function Dashboard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [statusIndex, setStatusIndex] = useState(0);
-  
+
+  // ─── EDGE CASE 1: double submit guard ─────────────────────────────────────
+  const isSubmitting = useRef(false);
+
+  // ─── EDGE CASE 2: validim errors per field ────────────────────────────────
+  const [fieldErrors, setFieldErrors] = useState({});
+  const [materialFieldErrors, setMaterialFieldErrors] = useState({});
+
+  // ─── EDGE CASE 3: error specifik per API / network ───────────────────────
+  const [apiError, setApiError] = useState(null);
+
   // State per AI Grading
   const [inputData, setInputData] = useState({ 
     studentAnswer: '', 
@@ -71,7 +87,7 @@ export default function Dashboard() {
 
   const loadingMessages = [
     "Analyzing text...",
-    "Consulting Llama-3.3...",
+    "Consulting AI..",
     "Comparing with rubric...",
     "Generating strengths...",
     "Finalizing report..."
@@ -80,6 +96,8 @@ export default function Dashboard() {
   const resetGradingFields = () => {
     setResult(null);
     setError(null);
+    setFieldErrors({});
+    setApiError(null);
     setInputData({ 
       studentAnswer: '', 
       questionText: '', 
@@ -147,9 +165,65 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [loading]);
 
+  // ─── EDGE CASE: session expiry check ─────────────────────────────────────
+  const checkSessionAndRun = useCallback(async (fn) => {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      setApiError("Sesioni juaj ka skaduar. Po ju ridrejtojmë tek login...");
+      setTimeout(() => router.push('/login'), 2000);
+      return;
+    }
+    await fn();
+  }, [router]);
+
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push('/login');
+  };
+
+  // ─── VALIDIM PER GRADING ─────────────────────────────────────────────────
+  const validateGradingInputs = () => {
+    const errors = {};
+
+    // EDGE CASE 1: input bosh
+    if (!inputData.questionText.trim()) {
+      errors.questionText = "Pyetja nuk mund të jetë bosh.";
+    }
+    if (!inputData.studentAnswer.trim()) {
+      errors.studentAnswer = "Përgjigja e studentit nuk mund të jetë bosh.";
+    }
+
+    // EDGE CASE 2: input shumë i gjatë
+    if (inputData.questionText.length > MAX_QUESTION_LENGTH) {
+      errors.questionText = `Pyetja nuk mund të kalojë ${MAX_QUESTION_LENGTH} karaktere. (${inputData.questionText.length}/${MAX_QUESTION_LENGTH})`;
+    }
+    if (inputData.studentAnswer.length > MAX_ANSWER_LENGTH) {
+      errors.studentAnswer = `Përgjigja nuk mund të kalojë ${MAX_ANSWER_LENGTH} karaktere. (${inputData.studentAnswer.length}/${MAX_ANSWER_LENGTH})`;
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // ─── VALIDIM PER MATERIALS ───────────────────────────────────────────────
+  const validateMaterialInputs = () => {
+    const errors = {};
+
+    if (!materialInput.subject.trim()) {
+      errors.subject = "Lënda nuk mund të jetë bosh.";
+    }
+    if (!materialInput.topic.trim()) {
+      errors.topic = "Tema nuk mund të jetë bosh.";
+    }
+    if (materialInput.subject.length > MAX_SUBJECT_LENGTH) {
+      errors.subject = `Lënda nuk mund të kalojë ${MAX_SUBJECT_LENGTH} karaktere.`;
+    }
+    if (materialInput.topic.length > MAX_TOPIC_LENGTH) {
+      errors.topic = `Tema nuk mund të kalojë ${MAX_TOPIC_LENGTH} karaktere.`;
+    }
+
+    setMaterialFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   // LOGJIKA PER GENERATE EXAM
@@ -179,98 +253,119 @@ export default function Dashboard() {
     }
   };
 
-  // LOGJIKA PER DOWNLOAD WORD (EXAM)
-const handleDownloadMaterialPDF = () => {
-  const doc = new jsPDF();
-  
-  // Konfigurimi i stilit
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(20);
-  doc.setTextColor(30, 58, 138); // Ngjyrë Blu (Slate-900)
-  doc.text(materialInput.subject.toUpperCase(), 20, 20);
-  
-  doc.setFontSize(14);
-  doc.setTextColor(100);
-  doc.text(`Tema: ${materialInput.topic}`, 20, 30);
-  
-  doc.setLineWidth(0.5);
-  doc.line(20, 35, 190, 35);
-  
-  doc.setFont("helvetica", "italic");
-  doc.setFontSize(11);
-  doc.setTextColor(60);
-  
-  // Rregullimi i tekstit që të mos dalë jashtë faqes
-  const splitText = doc.splitTextToSize(generatedMaterial, 170);
-  doc.text(splitText, 20, 45);
-  
-  doc.save(`Material_${materialInput.topic}.pdf`);
-};
-
-  // LOGJIKA PER GENERATE LEARNING MATERIALS
-// LOGJIKA PER GENERATE LEARNING MATERIALS
-  const handleGenerateMaterials = async () => {
-    if (!materialInput.topic || !materialInput.subject) {
-      alert("Ju lutem plotësoni Lëndën dhe Temën.");
-      return;
-    }
-    setLoading(true);
-    setGeneratedMaterial(null);
-    try {
-      const res = await fetch('/api/v1/materials/generate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(materialInput),
-      });
-      const data = await res.json();
-      
-      if (data.success) {
-        // NDRYSHIMI: Përdorim .content sepse ashtu e dërgon API
-        setGeneratedMaterial(data.content); 
-      } else {
-        alert("Gabim gjatë gjenerimit: " + data.error);
-      }
-    } catch (err) {
-      alert("Gabim teknik: " + err.message);
-    } finally {
-      setLoading(false);
-    }
+  // LOGJIKA PER DOWNLOAD PDF
+  const handleDownloadMaterialPDF = () => {
+    const doc = new jsPDF();
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20);
+    doc.setTextColor(30, 58, 138);
+    doc.text(materialInput.subject.toUpperCase(), 20, 20);
+    doc.setFontSize(14);
+    doc.setTextColor(100);
+    doc.text(`Tema: ${materialInput.topic}`, 20, 30);
+    doc.setLineWidth(0.5);
+    doc.line(20, 35, 190, 35);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(11);
+    doc.setTextColor(60);
+    const splitText = doc.splitTextToSize(generatedMaterial, 170);
+    doc.text(splitText, 20, 45);
+    doc.save(`Material_${materialInput.topic}.pdf`);
   };
 
-  // LOGJIKA PER DOWNLOAD WORD (MATERIALS)
-// LOGJIKA PER DOWNLOAD WORD (MATERIALS) - FRONTEND ONLY
-  const handleDownloadMaterialWord = () => {
-    try {
-      const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' "+
-        "xmlns:w='urn:schemas-microsoft-com:office:word' "+
-        "xmlns='http://www.w3.org/TR/REC-html40'>"+
-        "<head><meta charset='utf-8'><title>Export HTML to Doc</title></head><body>";
-      const footer = "</body></html>";
-      
-      // Krijojmë përmbajtjen me pak stilim që të duket mirë në Word
-      const html = header + 
+  // ─── EDGE CASES: double submit + API failure + session + network ──────────
+  const handleGenerateMaterials = async () => {
+    if (!validateMaterialInputs()) return;
+
+    // EDGE CASE: double submit guard
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+
+    setLoading(true);
+    setGeneratedMaterial(null);
+    setApiError(null);
+
+    await checkSessionAndRun(async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const res = await fetch('/api/v1/materials/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(materialInput),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // EDGE CASE: API failure - status jo 200
+        if (!res.ok) {
+          if (res.status === 401) {
+            setApiError("Sesioni ka skaduar. Po ju ridrejtojmë...");
+            setTimeout(() => router.push('/login'), 2000);
+            return;
+          }
+          if (res.status === 429) {
+            setApiError("Shumë kërkesa njëherësh. Ju lutem prisni pak sekonda dhe provoni përsëri.");
+            return;
+          }
+          if (res.status >= 500) {
+            setApiError("Serveri ka një problem teknik. Ju lutem provoni përsëri pas pak.");
+            return;
+          }
+          throw new Error(`Gabim i serverit: ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+          setGeneratedMaterial(data.content); 
+        } else {
+          setApiError("Gabim gjatë gjenerimit: " + (data.error || "E panjohur"));
+        }
+      } catch (err) {
+        // EDGE CASE: network error / timeout
+        if (err.name === 'AbortError') {
+          setApiError("Kërkesa mori shumë kohë. Kontrolloni lidhjen tuaj dhe provoni përsëri.");
+        } else if (!navigator.onLine) {
+          setApiError("Nuk ka lidhje interneti. Kontrolloni rrjetin tuaj.");
+        } else {
+          setApiError("Gabim i lidhjes: " + err.message);
+        }
+      }
+    });
+
+    setLoading(false);
+    isSubmitting.current = false;
+  };
+
+  // LOGJIKA PER DOWNLOAD WORD - FRONTEND ONLY
+  const handleDownloadMaterialWord = () => {
+    try {
+      const header = "<html xmlns:o='urn:schemas-microsoft-com:office:office' "+
+        "xmlns:w='urn:schemas-microsoft-com:office:word' "+
+        "xmlns='http://www.w3.org/TR/REC-html40'>"+
+        "<head><meta charset='utf-8'><title>Export HTML to Doc</title></head><body>";
+      const footer = "</body></html>";
+      const html = header + 
                    "<h1 style='color: #1e3a8a; font-family: Arial;'>"+ materialInput.subject.toUpperCase() +"</h1>" +
                    "<h3 style='color: #64748b; font-family: Arial;'>Tema: "+ materialInput.topic +"</h3>" +
                    "<hr>" +
                    "<p style='font-family: Georgia; line-height: 1.6; white-space: pre-wrap;'>"+ generatedMaterial +"</p>" + 
                    footer;
-
-      const blob = new Blob(['\ufeff', html], {
-        type: 'application/msword'
-      });
-      
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `Material_${materialInput.topic}.doc`; // E ruajmë si .doc (format klasik)
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      const blob = new Blob(['\ufeff', html], { type: 'application/msword' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Material_${materialInput.topic}.doc`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
       window.URL.revokeObjectURL(url);
-    } catch (err) {
-      alert("Gabim gjatë shkarkimit: " + err.message);
-    }
-  };
+    } catch (err) {
+      setApiError("Gabim gjatë shkarkimit: " + err.message);
+    }
+  };
 
   const deleteConversation = async (e, id) => {
     e.stopPropagation();
@@ -305,37 +400,78 @@ const handleDownloadMaterialPDF = () => {
     } catch (err) { setError("Failed to load history."); } finally { setLoading(false); }
   };
 
+  // ─── EDGE CASES: double submit + session + API failure + network per grading
   const handleGrade = async () => {
-    if (!inputData.questionText || !inputData.studentAnswer) {
-      setError("Please fill in at least the Question and Answer.");
-      return;
-    }
-    setLoading(true); setError(null); setResult(null);
-    try {
-      const res = await fetch('/api/v1/grading/grade', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(inputData),
-      });
-      if (!res.ok) throw new Error(`Server returned status ${res.status}`);
-      const data = await res.json();
-      if (data.success) {
-        setResult(data.data);
-        const { data: convData, error: convError } = await supabase
-          .from('conversations')
-          .insert([{ user_id: user.id, title: `Evaluation: ${inputData.questionText.substring(0, 30)}...` }])
-          .select().single();
-        if (convError) throw convError;
-        await supabase.from('messages').insert([
-          { conversation_id: convData.id, role: 'user', content: `Question: ${inputData.questionText} | Answer: ${inputData.studentAnswer}` },
-          { conversation_id: convData.id, role: 'assistant', content: JSON.stringify(data.data) }
-        ]);
-        setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1 }));
-        fetchHistory(user.id);
-      } else {
-        throw new Error(data.error || "Evaluation failed.");
+    if (!validateGradingInputs()) return;
+
+    // EDGE CASE: double submit guard
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+
+    setLoading(true);
+    setError(null);
+    setResult(null);
+    setApiError(null);
+
+    await checkSessionAndRun(async () => {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+        const res = await fetch('/api/v1/grading/grade', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(inputData),
+          signal: controller.signal,
+        });
+
+        clearTimeout(timeoutId);
+
+        // EDGE CASE: API failure
+        if (!res.ok) {
+          if (res.status === 401) {
+            setError("Sesioni ka skaduar. Po ju ridrejtojmë...");
+            setTimeout(() => router.push('/login'), 2000);
+            return;
+          }
+          if (res.status === 429) {
+            setError("Shumë kërkesa. Ju lutem prisni pak sekonda.");
+            return;
+          }
+          throw new Error(`Server returned status ${res.status}`);
+        }
+
+        const data = await res.json();
+        if (data.success) {
+          setResult(data.data);
+          const { data: convData, error: convError } = await supabase
+            .from('conversations')
+            .insert([{ user_id: user.id, title: `Evaluation: ${inputData.questionText.substring(0, 30)}...` }])
+            .select().single();
+          if (convError) throw convError;
+          await supabase.from('messages').insert([
+            { conversation_id: convData.id, role: 'user', content: `Question: ${inputData.questionText} | Answer: ${inputData.studentAnswer}` },
+            { conversation_id: convData.id, role: 'assistant', content: JSON.stringify(data.data) }
+          ]);
+          setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1 }));
+          fetchHistory(user.id);
+        } else {
+          throw new Error(data.error || "Evaluation failed.");
+        }
+      } catch (err) {
+        // EDGE CASE: network error / timeout
+        if (err.name === 'AbortError') {
+          setError("Kërkesa mori shumë kohë. Kontrolloni lidhjen tuaj.");
+        } else if (!navigator.onLine) {
+          setError("Nuk ka lidhje interneti. Kontrolloni rrjetin tuaj.");
+        } else {
+          setError(err.message);
+        }
       }
-    } catch (err) { setError(err.message); } finally { setLoading(false); }
+    });
+
+    setLoading(false);
+    isSubmitting.current = false;
   };
 
   const handleProfileUpdate = async (e) => {
@@ -439,7 +575,7 @@ const handleDownloadMaterialPDF = () => {
           >
             <Sparkles size={20} /> AI Exams
           </button>
-          <button onClick={() => { setActiveTab('learning_materials'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'learning_materials' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><BookOpen size={20} />AI Materials</button>
+          <button onClick={() => { setActiveTab('learning_materials'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'learning_materials' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><BookOpen size={20} /> AI Materials</button>
           <button onClick={() => { setActiveTab('analytics_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'analytics_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Analytics</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
         </nav>
         <button onClick={handleLogout} className="mt-auto flex items-center gap-3 px-4 py-3 rounded-xl text-red-500 hover:bg-red-50 transition-all font-bold uppercase text-xs italic tracking-widest"><LogOut size={20} /> Logout</button>
@@ -488,18 +624,71 @@ const handleDownloadMaterialPDF = () => {
 
             {activeTab === 'grading' && (
               <motion.div key="grading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                {error && (
-                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic">
-                    {error}
+                {/* Loading / Error states të qarta */}
+                {(error || apiError) && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2">
+                    <AlertTriangle size={16} className="shrink-0" />
+                    <span>{error || apiError}</span>
                   </motion.div>
                 )}
                 <div ref={gradingAreaRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 mb-12">
                   <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> Task Details</h2>
                     <div className="space-y-6">
-                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Exam Question</label><textarea value={inputData.questionText} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm md:text-base" rows="3" placeholder="Type question here..." onChange={(e) => setInputData({...inputData, questionText: e.target.value})}></textarea></div>
-                      <div><label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Student Answer</label><textarea value={inputData.studentAnswer} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all h-32 md:h-40 font-medium text-sm md:text-base" placeholder="Paste student answer..." onChange={(e) => setInputData({...inputData, studentAnswer: e.target.value})}></textarea></div>
-                      <button onClick={handleGrade} disabled={loading} className={`relative w-full font-black uppercase tracking-widest py-4 md:py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Exam Question</label>
+                        <textarea
+                          value={inputData.questionText}
+                          className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm md:text-base ${fieldErrors.questionText ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                          rows="3"
+                          placeholder="Type question here..."
+                          maxLength={MAX_QUESTION_LENGTH}
+                          onChange={(e) => {
+                            setInputData({...inputData, questionText: e.target.value});
+                            if (fieldErrors.questionText) setFieldErrors(p => ({...p, questionText: null}));
+                          }}
+                        />
+                        {/* Character counter — tregon kur afrohet limiti */}
+                        <div className="flex justify-between mt-1">
+                          {fieldErrors.questionText
+                            ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.questionText}</p>
+                            : <span />
+                          }
+                          <span className={`text-[10px] font-bold italic ${inputData.questionText.length > MAX_QUESTION_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>
+                            {inputData.questionText.length}/{MAX_QUESTION_LENGTH}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Student Answer</label>
+                        <textarea
+                          value={inputData.studentAnswer}
+                          className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all h-32 md:h-40 font-medium text-sm md:text-base ${fieldErrors.studentAnswer ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                          placeholder="Paste student answer..."
+                          maxLength={MAX_ANSWER_LENGTH}
+                          onChange={(e) => {
+                            setInputData({...inputData, studentAnswer: e.target.value});
+                            if (fieldErrors.studentAnswer) setFieldErrors(p => ({...p, studentAnswer: null}));
+                          }}
+                        />
+                        <div className="flex justify-between mt-1">
+                          {fieldErrors.studentAnswer
+                            ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.studentAnswer}</p>
+                            : <span />
+                          }
+                          <span className={`text-[10px] font-bold italic ${inputData.studentAnswer.length > MAX_ANSWER_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>
+                            {inputData.studentAnswer.length}/{MAX_ANSWER_LENGTH}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* EDGE CASE double submit: butoni disabled gjatë loading */}
+                      <button
+                        onClick={handleGrade}
+                        disabled={loading || isSubmitting.current}
+                        className={`relative w-full font-black uppercase tracking-widest py-4 md:py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}
+                      >
                         <AnimatePresence mode="wait">
                           {loading ? (
                             <motion.div key="l" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="flex items-center gap-2 text-sm md:text-base"><BrainCircuit className="animate-spin" size={20} /> <span>Processing...</span></motion.div>
@@ -510,6 +699,7 @@ const handleDownloadMaterialPDF = () => {
                       </button>
                     </div>
                   </section>
+
                   <section className="bg-slate-900 text-white p-6 md:p-8 rounded-3xl shadow-2xl min-h-[400px] md:min-h-[500px] relative overflow-hidden flex flex-col justify-center border-4 border-slate-800">
                     <AnimatePresence mode="wait">
                       {loading ? (
@@ -520,7 +710,7 @@ const handleDownloadMaterialPDF = () => {
                       ) : result ? (
                         <motion.div key="res" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="space-y-6 md:space-y-8">
                           <div className="flex items-center justify-between">
-                            <div className="max-w-[60%]"><h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1 italic">Evaluation Report</h3><p className="text-slate-400 text-[10px] md:text-sm italic tracking-tight leading-tight">OpenGPT is AI and can make mistakes.</p></div>
+                            <div className="max-w-[60%]"><h3 className="text-[10px] font-black text-blue-500 uppercase tracking-widest mb-1 italic">Evaluation Report</h3><p className="text-slate-400 text-[10px] md:text-sm italic tracking-tight leading-tight">AI can make mistakes.</p></div>
                             <div className="bg-slate-800 p-3 md:p-4 rounded-2xl text-center border border-slate-700 shadow-inner"><span className="text-3xl md:text-5xl font-black text-green-400">{result.score}</span><span className="block text-[8px] md:text-[10px] font-black text-slate-500 uppercase italic">Points</span></div>
                           </div>
                           <div className="h-px bg-slate-700"></div>
@@ -565,7 +755,6 @@ const handleDownloadMaterialPDF = () => {
               </motion.div>
             )}
 
-            {/* TAB-I PER EXAMS */}
             {activeTab === 'exams' && (
               <motion.div key="exams" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -594,15 +783,9 @@ const handleDownloadMaterialPDF = () => {
                       </button>
                     </div>
                   </section>
-
                   <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
                     <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                       <h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><LayoutDashboard size={18} /> Exam Preview</h3>
-                      {examQuestions && (
-                        <button onClick={handleDownloadWord} className="flex items-center gap-2 px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-green-100">
-                          <Download size={14} /> Download Word
-                        </button>
-                      )}
                     </div>
                     <div className="p-8 flex-1 overflow-y-auto">
                       <AnimatePresence mode="wait">
@@ -636,13 +819,32 @@ const handleDownloadMaterialPDF = () => {
             {/* TAB-I PER LEARNING MATERIALS */}
             {activeTab === 'learning_materials' && (
               <motion.div key="learning_materials" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+                {/* Error state i qartë për materials */}
+                {apiError && (
+                  <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2">
+                    <AlertTriangle size={16} className="shrink-0" />
+                    <span>{apiError}</span>
+                    <button onClick={() => setApiError(null)} className="ml-auto text-red-400 hover:text-red-600 shrink-0"><X size={14}/></button>
+                  </motion.div>
+                )}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><BookOpen className="text-blue-500" size={20} /> Gjenero Materiale</h2>
                     <div className="space-y-5">
                       <div>
                         <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label>
-                        <input type="text" placeholder="p.sh. Matematikë" value={materialInput.subject} onChange={(e) => setMaterialInput({...materialInput, subject: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                        <input
+                          type="text"
+                          placeholder="p.sh. Matematikë"
+                          value={materialInput.subject}
+                          maxLength={MAX_SUBJECT_LENGTH}
+                          onChange={(e) => {
+                            setMaterialInput({...materialInput, subject: e.target.value});
+                            if (materialFieldErrors.subject) setMaterialFieldErrors(p => ({...p, subject: null}));
+                          }}
+                          className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                        />
+                        {materialFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.subject}</p>}
                       </div>
                       <div>
                         <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label>
@@ -650,11 +852,27 @@ const handleDownloadMaterialPDF = () => {
                       </div>
                       <div>
                         <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label>
-                        <input type="text" placeholder="p.sh. Trigonometria" value={materialInput.topic} onChange={(e) => setMaterialInput({...materialInput, topic: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" />
+                        <input
+                          type="text"
+                          placeholder="p.sh. Trigonometria"
+                          value={materialInput.topic}
+                          maxLength={MAX_TOPIC_LENGTH}
+                          onChange={(e) => {
+                            setMaterialInput({...materialInput, topic: e.target.value});
+                            if (materialFieldErrors.topic) setMaterialFieldErrors(p => ({...p, topic: null}));
+                          }}
+                          className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+                        />
+                        {materialFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.topic}</p>}
                       </div>
-                      <button onClick={handleGenerateMaterials} disabled={loading} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                      {/* EDGE CASE double submit: disabled gjatë loading */}
+                      <button
+                        onClick={handleGenerateMaterials}
+                        disabled={loading || isSubmitting.current}
+                        className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}
+                      >
                         {loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}
-                        <span>Gjenero Materialin</span>
+                        <span>{loading ? 'Duke gjeneruar...' : 'Gjenero Materialin'}</span>
                       </button>
                     </div>
                   </section>
@@ -662,23 +880,22 @@ const handleDownloadMaterialPDF = () => {
                   <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
                     <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                       <h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><BookOpen size={18} /> Material Preview</h3>
-{generatedMaterial && (
-  <div className="flex gap-2">
-    <button 
-      onClick={handleDownloadMaterialWord}
-      className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
-    >
-      <Download size={14} /> Word
-    </button>
-    
-    <button 
-      onClick={handleDownloadMaterialPDF}
-      className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"
-    >
-      <FileText size={14} /> PDF
-    </button>
-  </div>
-)}
+                      {generatedMaterial && (
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={handleDownloadMaterialWord}
+                            className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                          >
+                            <Download size={14} /> Word
+                          </button>
+                          <button 
+                            onClick={handleDownloadMaterialPDF}
+                            className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"
+                          >
+                            <FileText size={14} /> PDF
+                          </button>
+                        </div>
+                      )}
                     </div>
                     <div className="p-8 flex-1 overflow-y-auto bg-white">
                       <AnimatePresence mode="wait">
@@ -702,6 +919,20 @@ const handleDownloadMaterialPDF = () => {
                       </AnimatePresence>
                     </div>
                   </section>
+                </div>
+              </motion.div>
+            )}
+
+            {activeTab === 'analytics_soon' && (
+              <motion.div key="soon" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex items-center justify-center py-10">
+                <div className="text-center bg-white p-8 md:p-16 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-2xl max-w-lg relative overflow-hidden mx-4">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-600"></div>
+                  <div className="bg-blue-50 w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-600">
+                    <Lock size={32} />
+                  </div>
+                  <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-4 tracking-tighter uppercase italic">Coming Soon...</h2>
+                  <p className="text-sm md:text-base text-slate-500 font-medium leading-relaxed italic">The <span className="text-blue-600 font-bold italic">Detailed Analytics</span> module is under development.</p>
+                  <div className="mt-8 flex items-center justify-center gap-2 text-blue-400 font-black text-[10px] md:text-xs uppercase tracking-widest animate-pulse italic"><Clock size={16} /> Work in progress</div>
                 </div>
               </motion.div>
             )}
