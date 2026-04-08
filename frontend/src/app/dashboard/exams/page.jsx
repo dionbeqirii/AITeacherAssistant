@@ -319,17 +319,18 @@ export default function ExamsPage() {
                       onChange={(e) => setFormData({...formData, numQuestions: e.target.value})}
                     />
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Tipi</label>
-                    <select 
-                      className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer"
-                      value={formData.type}
-                      onChange={(e) => setFormData({...formData, type: e.target.value})}
-                    >
-                      <option value="multiple-choice">Zgjedhje</option>
-                      <option value="open-ended">Shkrim</option>
-                    </select>
-                  </div>
+<div className="space-y-2">
+  <label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">Tipi</label>
+  <select 
+    className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer"
+    value={formData.type}
+    onChange={(e) => setFormData({...formData, type: e.target.value})}
+  >
+    <option value="multiple-choice">Zgjedhje</option>
+    <option value="open-ended">Shkrim</option>
+    <option value="mixed">Të kombinuara</option> {/* Kjo është fusha e re */}
+  </select>
+</div>
                 </div>
 
                 <div className="space-y-2">
