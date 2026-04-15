@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata = {
   title: "AI Teacher Assistant",
   description: "Vlerësim automatik me AI",
+  icons: {
+    icon: "/icon.png",
+    apple: "/apple-icon.png",
+  },
 };
 
 export default function RootLayout({ children }) {
