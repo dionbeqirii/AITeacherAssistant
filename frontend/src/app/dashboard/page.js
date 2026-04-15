@@ -28,6 +28,7 @@ const MAX_TOPIC_LENGTH = 200;
 // ─── ANIMATED COUNTER ────────────────────────────────────────────────────────
 function AnimatedNumber({ value, suffix = '', decimals = 0 }) {
   const [display, setDisplay] = useState(0);
+
   useEffect(() => {
     let start = 0;
     const end = parseFloat(value) || 0;
@@ -47,6 +48,27 @@ function AnimatedNumber({ value, suffix = '', decimals = 0 }) {
 
 export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  
+  // ─── CONNECTION LOST LOGIC (SHTUAR KËTU) ──────────────────────────────────
+  const [isOffline, setIsOffline] = useState(false);
+
+  useEffect(() => {
+    if (typeof window !== "undefined" && !window.navigator.onLine) {
+      setIsOffline(true);
+    }
+    const handleOnline = () => setIsOffline(false);
+    const handleOffline = () => setIsOffline(true);
+
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────────
+
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
 
@@ -68,6 +90,7 @@ export default function Dashboard() {
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
   const [statusIndex, setStatusIndex] = useState(0);
+
   const isSubmitting = useRef(false);
   const [fieldErrors, setFieldErrors] = useState({});
   const [materialFieldErrors, setMaterialFieldErrors] = useState({});
@@ -75,6 +98,7 @@ export default function Dashboard() {
 
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [feedbackForm, setFeedbackForm] = useState({ rating: 0, message: '' });
+
   const [feedbackStatus, setFeedbackStatus] = useState({ type: 'idle', text: '' });
   const feedbackRef = useRef(null);
 
@@ -83,6 +107,7 @@ export default function Dashboard() {
     professorName: '', subject: '', topic: '', level: 'Fakultet',
     numQuestions: 5, type: 'multiple-choice', difficulty: 'Medium', extraInfo: ''
   });
+
   const [examQuestions, setExamQuestions] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
@@ -92,11 +117,13 @@ export default function Dashboard() {
   const [homeworkInput, setHomeworkInput] = useState({
     subject: '', topic: '', level: '', numTasks: 3, type: 'open', deadline: '', extraInfo: ''
   });
+
   const [generatedHomework, setGeneratedHomework] = useState(null);
   const [homeworkFieldErrors, setHomeworkFieldErrors] = useState({});
   const [homeworkApiError, setHomeworkApiError] = useState(null);
 
   const [inputData, setInputData] = useState({ studentAnswer: '', questionText: '', rubric: '', subject: 'Programming' });
+
   const [materialInput, setMaterialInput] = useState({ subject: '', level: '', topic: '', materialType: 'summary' });
   const [generatedMaterial, setGeneratedMaterial] = useState(null);
 
@@ -130,9 +157,11 @@ export default function Dashboard() {
       const { count: weekCount } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekAgo.toISOString());
       const { data: convData } = await supabase.from('conversations').select('id').eq('user_id', userId);
       let classAverage = 0; let aiAccuracy = 0;
+
       if (convData && convData.length > 0) {
         const convIds = convData.map(c => c.id);
         const { data: assistantMessages } = await supabase.from('messages').select('content').in('conversation_id', convIds).eq('role', 'assistant');
+
         if (assistantMessages && assistantMessages.length > 0) {
           const scores = assistantMessages.map(m => { try { const p = JSON.parse(m.content); return typeof p.score === 'number' ? p.score : null; } catch { return null; } }).filter(s => s !== null);
           if (scores.length > 0) {
@@ -192,7 +221,8 @@ export default function Dashboard() {
   // ─── AI EXAMS HANDLERS ────────────────────────────────────────────────────
   const handleExamGenerate = async (e) => {
     e.preventDefault();
-    setExamLoading(true); setExamQuestions([]); setIsSaved(false);
+    setExamLoading(true); setExamQuestions([]);
+    setIsSaved(false);
     try {
       const response = await fetch('/api/v1/exams/generate', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -284,7 +314,8 @@ export default function Dashboard() {
     if (homeworkInput.subject.length > MAX_SUBJECT_LENGTH) errors.subject = `Lënda nuk mund të kalojë ${MAX_SUBJECT_LENGTH} karaktere.`;
     if (homeworkInput.topic.length > MAX_TOPIC_LENGTH) errors.topic = `Tema nuk mund të kalojë ${MAX_TOPIC_LENGTH} karaktere.`;
     if (homeworkInput.numTasks < 1 || homeworkInput.numTasks > 10) errors.numTasks = "Numri duhet të jetë ndërmjet 1 dhe 10.";
-    setHomeworkFieldErrors(errors); return Object.keys(errors).length === 0;
+    setHomeworkFieldErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleGenerateHomework = async () => {
@@ -313,7 +344,8 @@ export default function Dashboard() {
         else setHomeworkApiError("Gabim: " + err.message);
       }
     });
-    setLoading(false); isSubmitting.current = false;
+    setLoading(false);
+    isSubmitting.current = false;
   };
 
   const handleDownloadHomeworkPDF = () => {
@@ -327,8 +359,11 @@ export default function Dashboard() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(30, 58, 138);
     doc.text(homeworkInput.subject.toUpperCase(), pageWidth / 2, y, { align: 'center' }); y += 8;
     doc.setFontSize(11); doc.setTextColor(100); doc.setFont("helvetica", "normal");
-    doc.text(`Tema: ${homeworkInput.topic}  |  Niveli: ${homeworkInput.level || 'N/A'}  |  Tipi: ${homeworkInput.type === 'open' ? 'E hapur' : homeworkInput.type === 'practical' ? 'Praktike' : 'E kombinuar'}`, pageWidth / 2, y, { align: 'center' }); y += 6;
-    if (homeworkInput.deadline) { doc.setFont("helvetica", "italic"); doc.setTextColor(180, 80, 50); doc.text(`Afati i dorëzimit: ${homeworkInput.deadline}`, pageWidth / 2, y, { align: 'center' }); y += 6; }
+    doc.text(`Tema: ${homeworkInput.topic}  |  Niveli: ${homeworkInput.level || 'N/A'}  |  Tipi: ${homeworkInput.type === 'open' ? 'E hapur' : homeworkInput.type === 'practical' ? 'Praktike' : 'E kombinuar'}`, pageWidth / 2, y, { align: 'center' });
+    y += 6;
+    if (homeworkInput.deadline) { doc.setFont("helvetica", "italic"); doc.setTextColor(180, 80, 50);
+      doc.text(`Afati i dorëzimit: ${homeworkInput.deadline}`, pageWidth / 2, y, { align: 'center' }); y += 6;
+    }
     doc.setDrawColor(200, 210, 230); doc.setLineWidth(0.5); doc.line(margin, y, pageWidth - margin, y); y += 10;
     generatedHomework.forEach((task, idx) => {
       addPageIfNeeded(30);
@@ -341,15 +376,19 @@ export default function Dashboard() {
       const descLines = doc.splitTextToSize(task.description, usableWidth);
       addPageIfNeeded(descLines.length * 5 + 5); doc.text(descLines, margin, y); y += descLines.length * 5 + 6;
       if (task.requirements?.length > 0) {
-        addPageIfNeeded(10); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(40); doc.text("Kërkesat:", margin, y); y += 6;
+        addPageIfNeeded(10); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(40);
+        doc.text("Kërkesat:", margin, y); y += 6;
         doc.setFont("helvetica", "normal"); doc.setTextColor(70);
-        task.requirements.forEach(req => { addPageIfNeeded(7); const rl = doc.splitTextToSize(`• ${req}`, usableWidth - 5); doc.text(rl, margin + 3, y); y += rl.length * 5 + 2; }); y += 3;
+        task.requirements.forEach(req => { addPageIfNeeded(7); const rl = doc.splitTextToSize(`• ${req}`, usableWidth - 5); doc.text(rl, margin + 3, y); y += rl.length * 5 + 2; });
+        y += 3;
       }
       if (task.rubric?.length > 0) {
-        addPageIfNeeded(10); doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(40); doc.text("Kriteret e Vlerësimit:", margin, y); y += 6;
+        addPageIfNeeded(10);
+        doc.setFont("helvetica", "bold"); doc.setFontSize(10); doc.setTextColor(40); doc.text("Kriteret e Vlerësimit:", margin, y); y += 6;
         task.rubric.forEach(r => { addPageIfNeeded(7); doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(80); doc.text(`• ${r.criteria}`, margin + 3, y); doc.setFont("helvetica", "bold"); doc.setTextColor(30, 58, 138); doc.text(`${r.points} pikë`, pageWidth - margin, y, { align: 'right' }); y += 6; });
       }
-      y += 5; addPageIfNeeded(5); doc.setDrawColor(220, 225, 235); doc.setLineWidth(0.3); doc.line(margin, y, pageWidth - margin, y); y += 8;
+      y += 5; addPageIfNeeded(5); doc.setDrawColor(220, 225, 235); doc.setLineWidth(0.3); doc.line(margin, y, pageWidth - margin, y);
+      y += 8;
     });
     doc.save(`Detyra_${homeworkInput.subject}_${homeworkInput.topic}.pdf`);
   };
@@ -412,7 +451,8 @@ export default function Dashboard() {
     if (!validateMaterialInputs()) return;
     if (isSubmitting.current) return;
     isSubmitting.current = true;
-    setLoading(true); setGeneratedMaterial(null); setApiError(null);
+    setLoading(true);
+    setGeneratedMaterial(null); setApiError(null);
     await checkSessionAndRun(async () => {
       try {
         const controller = new AbortController();
@@ -434,16 +474,19 @@ export default function Dashboard() {
         else setApiError("Gabim: " + err.message);
       }
     });
-    setLoading(false); isSubmitting.current = false;
+    setLoading(false);
+    isSubmitting.current = false;
   };
 
   const handleDownloadMaterialPDF = () => {
     const doc = new jsPDF();
-    doc.setFont("helvetica", "bold"); doc.setFontSize(20); doc.setTextColor(30, 58, 138);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(20); doc.setTextColor(30, 58, 138);
     doc.text(materialInput.subject.toUpperCase(), 20, 20);
     doc.setFontSize(14); doc.setTextColor(100); doc.text(`Tema: ${materialInput.topic}`, 20, 30);
     doc.setLineWidth(0.5); doc.line(20, 35, 190, 35);
-    doc.setFont("helvetica", "italic"); doc.setFontSize(11); doc.setTextColor(60);
+    doc.setFont("helvetica", "italic");
+    doc.setFontSize(11); doc.setTextColor(60);
     doc.text(doc.splitTextToSize(generatedMaterial, 170), 20, 45);
     doc.save(`Material_${materialInput.topic}.pdf`);
   };
@@ -474,14 +517,16 @@ export default function Dashboard() {
       const { data: messages, error: msgError } = await supabase.from('messages').select('*').eq('conversation_id', conv.id).order('created_at', { ascending: true });
       if (msgError) throw msgError;
       if (messages && messages.length >= 2) {
-        try { setResult(JSON.parse(messages[1].content)); } catch { setResult({ feedback: messages[1].content, score: "N/A" }); }
+        try { setResult(JSON.parse(messages[1].content));
+        } catch { setResult({ feedback: messages[1].content, score: "N/A" }); }
         const userText = messages[0].content;
         if (userText.includes('|')) {
           const parts = userText.split('|');
           setInputData(prev => ({ ...prev, questionText: parts[0].replace('Question: ', '').trim(), studentAnswer: parts[1].replace('Answer: ', '').trim() }));
         }
       }
-    } catch (err) { setError("Failed to load history."); } finally { setLoading(false); }
+    } catch (err) { setError("Failed to load history.");
+    } finally { setLoading(false); }
   };
 
   const handleGrade = async () => {
@@ -544,7 +589,8 @@ export default function Dashboard() {
         if (pwdError) throw pwdError;
       }
       alert("Profile successfully updated!"); setIsProfileOpen(false); window.location.reload();
-    } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); }
+    } catch (err) { alert("Error: " + err.message);
+    } finally { setLoading(false); }
   };
 
   const renderedProfileModal = useMemo(() => (
@@ -557,7 +603,8 @@ export default function Dashboard() {
               <button onClick={() => setIsProfileOpen(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-all"><X size={20}/></button>
               <div className="relative w-24 h-24 mx-auto mb-4 group cursor-pointer">
                 <div className="w-full h-full bg-white/20 rounded-3xl flex items-center justify-center border-2 border-white/30 overflow-hidden shadow-lg">
-                  {profileForm.avatarPreview ? <img src={profileForm.avatarPreview} alt="Avatar" className="w-full h-full object-cover" /> : <User size={40} className="text-white/80"/>}
+                  {profileForm.avatarPreview ?
+                    <img src={profileForm.avatarPreview} alt="Avatar" className="w-full h-full object-cover" /> : <User size={40} className="text-white/80"/>}
                 </div>
                 <div className="absolute inset-0 bg-black/40 rounded-3xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"><Camera size={24} className="text-white" /></div>
                 <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => { const file = e.target.files[0]; if(file) setProfileForm({...profileForm, avatarPreview: URL.createObjectURL(file), avatarFile: file}); }} />
@@ -638,6 +685,29 @@ export default function Dashboard() {
 
   return (
     <div className="flex h-screen bg-slate-50 text-slate-900 font-sans relative overflow-hidden">
+      
+      {/* ── NJOFTIMI CONNECTION LOST ─────────────────────────────────────────── */}
+      <AnimatePresence>
+        {isOffline && (
+          <motion.div
+            initial={{ opacity: 0, y: -50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -50 }}
+            className="fixed top-0 left-0 right-0 z-[100] p-4 flex justify-center pointer-events-none"
+          >
+            <div className="bg-red-600 text-white px-8 py-4 rounded-3xl shadow-2xl flex items-center gap-4 border-2 border-red-400 pointer-events-auto backdrop-blur-md">
+              <div className="bg-white/20 p-2 rounded-xl animate-pulse">
+                <AlertTriangle size={24} className="text-white" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black uppercase italic tracking-tighter leading-none">Connection Lost</h3>
+                <p className="text-[10px] font-bold opacity-80 uppercase mt-1">Kontrolloni Wi-Fi tuaj...</p>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* ────────────────────────────────────────────────────────────────────── */}
 
       {/* ── SIDEBAR ──────────────────────────────────────────────────────────── */}
       <aside className={`fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-slate-200 p-6 flex flex-col shadow-xl transition-transform duration-300 md:relative md:translate-x-0 md:shadow-sm shrink-0 ${isSidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
@@ -907,7 +977,7 @@ export default function Dashboard() {
 
             {/* ── HOMEWORK ─────────────────────────────────────────────────────── */}
             {activeTab === 'homework' && (
-              <motion.div key="homework" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+               <motion.div key="homework" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                 {homeworkApiError && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span>{homeworkApiError}</span><button onClick={() => setHomeworkApiError(null)} className="ml-auto text-red-400 hover:text-red-600 shrink-0"><X size={14}/></button></motion.div>)}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 h-fit lg:sticky lg:top-6">
@@ -940,7 +1010,7 @@ export default function Dashboard() {
                               <span className="text-slate-300">|</span>
                               <span className="text-[10px] font-black text-slate-400 italic">{homeworkInput.topic}</span>
                               {homeworkInput.deadline && (<><span className="text-slate-300">|</span><span className="text-[10px] font-black text-orange-500 flex items-center gap-1 uppercase tracking-widest"><Calendar size={12} /> Afati: {new Date(homeworkInput.deadline).toLocaleDateString('sq-AL', { day: '2-digit', month: 'long', year: 'numeric' })}</span></>)}
-                            </div>
+                             </div>
                             {generatedHomework.map((task, idx) => {
                               const tConf = homeworkTypeConfig[task.type] || homeworkTypeConfig.open;
                               return (
@@ -950,9 +1020,9 @@ export default function Dashboard() {
                                     <span className={`shrink-0 text-[9px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg flex items-center gap-1 ${tConf.bg} ${tConf.text}`}><span className={`w-1.5 h-1.5 rounded-full ${tConf.dot}`}></span>{tConf.label}</span>
                                   </div>
                                   <div className="p-5 space-y-4">
-                                    <p className="text-sm text-slate-600 leading-relaxed">{task.description}</p>
+                                     <p className="text-sm text-slate-600 leading-relaxed">{task.description}</p>
                                     {task.requirements?.length > 0 && (<div className="bg-slate-50 rounded-xl p-4 border border-slate-100"><p className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2"><CheckCircle2 size={12} className="text-emerald-500"/> Kërkesat</p><ul className="space-y-2">{task.requirements.map((req, i) => (<li key={i} className="flex items-start gap-2 text-xs text-slate-600 font-medium"><span className="w-1.5 h-1.5 rounded-full bg-blue-400 mt-1.5 shrink-0"></span>{req}</li>))}</ul></div>)}
-                                    {task.rubric?.length > 0 && (<div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50"><p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Target size={12}/> Kriteret e Vlerësimit</p><div className="space-y-2">{task.rubric.map((r, i) => (<div key={i} className="flex items-center justify-between"><span className="text-xs text-slate-600 font-medium">{r.criteria}</span><span className="text-[10px] font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-lg">{r.points} pikë</span></div>))}<div className="flex items-center justify-between pt-2 border-t border-blue-100 mt-2"><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total</span><span className="text-[10px] font-black text-blue-700 bg-blue-200 px-2 py-0.5 rounded-lg">{task.rubric.reduce((sum, r) => sum + (r.points || 0), 0)} pikë</span></div></div></div>)}
+                                     {task.rubric?.length > 0 && (<div className="bg-blue-50/50 rounded-xl p-4 border border-blue-100/50"><p className="text-[10px] font-black text-blue-400 uppercase tracking-widest mb-3 flex items-center gap-2"><Target size={12}/> Kriteret e Vlerësimit</p><div className="space-y-2">{task.rubric.map((r, i) => (<div key={i} className="flex items-center justify-between"><span className="text-xs text-slate-600 font-medium">{r.criteria}</span><span className="text-[10px] font-black text-blue-600 bg-blue-100 px-2 py-0.5 rounded-lg">{r.points} pikë</span></div>))}<div className="flex items-center justify-between pt-2 border-t border-blue-100 mt-2"><span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Total</span><span className="text-[10px] font-black text-blue-700 bg-blue-200 px-2 py-0.5 rounded-lg">{task.rubric.reduce((sum, r) => sum + (r.points || 0), 0)} pikë</span></div></div></div>)}
                                   </div>
                                 </motion.div>
                               );
