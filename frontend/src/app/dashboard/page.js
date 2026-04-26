@@ -1448,16 +1448,6 @@ export default function Dashboard() {
                         </div>
                       )}
 
-                      {/* NEW: Filtro sipas Klasës/Grupit */}
-                      {gbClasses.length > 0 && (
-                        <div className="relative">
-                          <select value={gbFilterClass} onChange={(e) => setGbFilterClass(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
-                            <option value="all">Të gjitha klasat/grupet</option>
-                            {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
-                          </select>
-                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
-                        </div>
-                      )}
                 
 
 
