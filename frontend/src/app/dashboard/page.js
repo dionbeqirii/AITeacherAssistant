@@ -8,7 +8,9 @@ import {
   Clock, Construction, Lock, History, CheckCircle2, AlertTriangle, Trash2,
   User, Bell, X, Camera, Shield, UserCircle, Menu, Download, BookOpen, Layers, ListOrdered,
   MessageSquare, Star, TrendingUp, Award, Zap, Activity, ClipboardList, Calendar, Target,
-  Save, FileDown, Loader2, BookMarked, Plus, Pencil, Search, ChevronDown, Check
+  Save, FileDown, Loader2, BookMarked, Plus, Pencil, Search, ChevronDown, Check,
+  // IKONAT E REJA KËTU:
+  Users, Hash, Mail, Book 
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -63,7 +65,14 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [stats, setStats] = useState({ totalEvaluations: 0, classAverage: 0, aiAccuracy: 0, thisWeek: 0, statsLoading: true });
+  const [stats, setStats] = useState({ 
+    totalEvaluations: 0, 
+    classAverage: 0, 
+    aiAccuracy: 0, 
+    thisWeek: 0, 
+    statsLoading: true,
+    chartData: [] // NEW: Shtojmë të dhënat e grafikut këtu
+  });
   const [conversations, setConversations] = useState([]);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const router = useRouter();
@@ -96,20 +105,36 @@ export default function Dashboard() {
   const [homeworkFieldErrors, setHomeworkFieldErrors] = useState({});
   const [homeworkApiError, setHomeworkApiError] = useState(null);
 
-  // ─── STATE GRADEBOOK & ABSENCES ───────────────────────────────────────────
+    // STATE GRADEBOOK & ABSENCES ───────────────────────────────────────────
   const [gradebook, setGradebook] = useState([]);
   const [gradebookLoading, setGradebookLoading] = useState(false);
   const [gradebookError, setGradebookError] = useState(null);
-  const [gbScale, setGbScale] = useState('1-10');
+  const [gbScale, setGbScale] = useState('1-5');
   const [gbFilterSubject, setGbFilterSubject] = useState('all');
+  const [gbFilterClass, setGbFilterClass] = useState('all'); // NEW: State for Class/Group filter
   const [gbSearchQuery, setGbSearchQuery] = useState('');
   const [gbShowForm, setGbShowForm] = useState(false);
   const [gbEditingId, setGbEditingId] = useState(null);
-  const [gbForm, setGbForm] = useState({ subject: '', student_name: '', period_1: '', period_2: '', period_3: '' });
+  const [gbForm, setGbForm] = useState({ 
+    subject: '', 
+    student_name: '', 
+    class_group: '',       // NEW: Class/Group
+    student_id_number: '', // NEW: Student ID Number
+    email_contact: '',     // NEW: Email/Contact
+    period_1: '', 
+    period_2: '', 
+    period_3: '',
+    notes: '',             // NEW: Notes
+    scale: '1-10'          // NEW: Shkalla e Notave
+  });
+
   const [gbFormErrors, setGbFormErrors] = useState({});
   const [gbSaving, setGbSaving] = useState(false);
-  
+  const [gbAddMode, setGbAddMode] = useState('new'); // 'new' ose 'existing'
+  const [gbSelectedExistingStudent, setGbSelectedExistingStudent] = useState(null); // Ruaj studentin e zgjedhur
+
   // STATE I SHTUAR PËR MUNGESAT
+
   const [gradebookSubTab, setGradebookSubTab] = useState('grades');
   const [absencesFilter, setAbsencesFilter] = useState(null);
   const [absences, setAbsences] = useState([]);
@@ -146,23 +171,108 @@ export default function Dashboard() {
 
   const fetchStats = async (userId) => {
     try {
-      const { count: totalCount } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', userId);
-      const weekAgo = new Date(); weekAgo.setDate(weekAgo.getDate() - 7);
-      const { count: weekCount } = await supabase.from('conversations').select('*', { count: 'exact', head: true }).eq('user_id', userId).gte('created_at', weekAgo.toISOString());
-      const { data: convData } = await supabase.from('conversations').select('id').eq('user_id', userId);
-      let classAverage = 0; let aiAccuracy = 0;
-      if (convData?.length > 0) {
-        const { data: msgs } = await supabase.from('messages').select('content').in('conversation_id', convData.map(c => c.id)).eq('role', 'assistant');
-        if (msgs?.length > 0) {
-          const scores = msgs.map(m => { try { const p = JSON.parse(m.content); return typeof p.score === 'number' ? p.score : null; } catch { return null; } }).filter(s => s !== null);
-          if (scores.length > 0) { classAverage = parseFloat((scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1));
-            aiAccuracy = parseFloat(((scores.filter(s => s > 0).length / scores.length) * 100).toFixed(1));
+      // 1. Merr Statistikat e Aktivitetit të AI-së (nga Conversations)
+      // Kjo pjesë mbetet për `totalEvaluations`, `thisWeek`, `aiAccuracy`
+      const { data: convData, count: totalEvaluationsCount, error: convError } = await supabase
+        .from('conversations')
+        .select('id, created_at', { count: 'exact' })
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (convError) console.error("Error fetching conversations:", convError);
+
+      const totalEvaluations = totalEvaluationsCount || 0;
+
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const thisWeek = convData ? convData.filter(c => new Date(c.created_at) >= weekAgo).length : 0;
+
+      let aiAccuracy = 0;
+      if (convData && convData.length > 0) {
+        const { data: msgs, error: msgsError } = await supabase
+          .from('messages')
+          .select('content')
+          .in('conversation_id', convData.map(c => c.id))
+          .eq('role', 'assistant');
+
+        if (msgsError) console.error("Error fetching messages:", msgsError);
+
+        if (msgs && msgs.length > 0) {
+          const scores = msgs.map(m => {
+            try {
+              const p = JSON.parse(m.content);
+              return typeof p.score === 'number' ? p.score : null;
+            } catch {
+              return null;
+            }
+          }).filter(s => s !== null);
+
+          if (scores.length > 0) {
+            aiAccuracy = parseFloat(((scores.filter(s => s > 0).length / scores.length) * 100).toFixed(1)); 
           }
         }
       }
-      setStats({ totalEvaluations: totalCount || 0, classAverage, aiAccuracy: aiAccuracy || 99.2, thisWeek: weekCount || 0, statsLoading: false });
-    } catch { setStats(prev => ({ ...prev, statsLoading: false })); }
+
+      // 2. Merr Statistikat e Notave (nga Gradebook)
+      // Kjo pjesë do të llogarisë `classAverage` dhe `chartData`
+      const { data: gradebookEntries, error: gbError } = await supabase
+        .from('gradebook')
+        .select('subject, average')
+        .eq('user_id', userId);
+      
+      if (gbError) console.error("Error fetching gradebook:", gbError);
+
+      let classAverage = 0;
+      const subjectAverages = {}; // Do te mbaje mesataret per cdo lende
+
+      if (gradebookEntries && gradebookEntries.length > 0) {
+        // Llogarit mesataren e pergjithshme te klases
+        const allAverages = gradebookEntries.map(entry => entry.average).filter(avg => avg !== null);
+        if (allAverages.length > 0) {
+          classAverage = parseFloat((allAverages.reduce((sum, avg) => sum + avg, 0) / allAverages.length).toFixed(1));
+        }
+
+        // Llogarit mesataret per cdo lende per grafiku
+        const gradesBySubject = {};
+        gradebookEntries.forEach(entry => {
+          if (entry.subject && entry.average !== null) {
+            if (!gradesBySubject[entry.subject]) {
+              gradesBySubject[entry.subject] = [];
+            }
+            gradesBySubject[entry.subject].push(entry.average);
+          }
+        });
+
+        for (const subject in gradesBySubject) {
+          const grades = gradesBySubject[subject];
+          if (grades.length > 0) {
+            subjectAverages[subject] = parseFloat((grades.reduce((sum, grade) => sum + grade, 0) / grades.length).toFixed(1));
+          }
+        }
+      }
+
+      // Formatimi i të dhënave të grafikut për lëndët (mesatarja)
+      const chartDataForSubjects = Object.entries(subjectAverages).map(([subject, average]) => ({
+        name: subject,
+        score: average, // 'score' këtu përfaqëson mesataren e lëndës
+      }));
+
+      setStats({
+        totalEvaluations,
+        classAverage, // Tani vjen nga gradebook
+        aiAccuracy: aiAccuracy, 
+        thisWeek,
+        statsLoading: false,
+        chartData: chartDataForSubjects, // Tani chartData përmban mesataret e lëndëve nga gradebook
+      });
+    } catch (err) {
+      console.error("Gabim gjatë marrjes së statistikave të dashboard-it:", err);
+      setStats(prev => ({ ...prev, statsLoading: false }));
+    }
   };
+
+
+
 
   useEffect(() => {
     const checkUser = async () => {
@@ -317,20 +427,62 @@ export default function Dashboard() {
     }
   };
 
-  // Lista unike e lëndëve për filter
+  // NEW: Lista unike e lëndëve për filter
   const gbSubjects = useMemo(() => {
-    const s = [...new Set(gradebook.map(g => g.subject))].sort();
+    const s = [...new Set(gradebook.map(g => g.subject))].sort((a, b) => a.localeCompare(b, 'sq'));
     return s;
   }, [gradebook]);
 
-  // Filtrim + kërkim
+  // NEW: Lista unike e klasave/grupeve për filter
+  const gbClasses = useMemo(() => {
+    const cleanedClassGroups = gradebook.map(g => g.class_group) 
+                                      .filter(Boolean)        
+                                      .map(c => c.trim());    
+    const uniqueClassGroups = [...new Set(cleanedClassGroups)];
+    return uniqueClassGroups.sort((a, b) => a.localeCompare(b, 'sq'));
+  }, [gradebook]);
+
+  // NEW: Lista e studentëve unikë për zgjedhje në formularin "Shto lëndë"
+  const gbUniqueStudents = useMemo(() => {
+    const studentsMap = new Map();
+    gradebook.forEach(s => {
+      // Krijojmë një ID unike bazuar në emër + klasë (ose student_id_number nëse disponohet)
+      const studentIdentifier = s.student_id_number && s.student_id_number !== '' 
+                                ? s.student_id_number 
+                                : `${s.student_name}-${s.class_group}`;
+      
+      // Vetëm nëse nuk e kemi shtuar këtë student më parë, e shtojmë
+      if (!studentsMap.has(studentIdentifier)) {
+        studentsMap.set(studentIdentifier, {
+          id: studentIdentifier, // ID e brendshme, jo ajo e rreshtit te Supabase. Kjo ID na duhet per key te React.
+          student_name: s.student_name,
+          class_group: s.class_group,
+          student_id_number: s.student_id_number,
+          email_contact: s.email_contact,
+          notes: s.notes,
+          // Nuk përfshijmë subject, period_x, average, scale pasi këto janë specifike për lëndën
+        });
+      }
+    });
+    return Array.from(studentsMap.values()).sort((a, b) => a.student_name.localeCompare(b.student_name, 'sq'));
+  }, [gradebook]);
+
+
+  // Filtrim + kërkim + RENDITJE ALFABETIKE
   const gbFiltered = useMemo(() => {
     return gradebook.filter(g => {
       const matchSubject = gbFilterSubject === 'all' || g.subject === gbFilterSubject;
-      const matchSearch = gbSearchQuery === '' || g.student_name.toLowerCase().includes(gbSearchQuery.toLowerCase()) || g.subject.toLowerCase().includes(gbSearchQuery.toLowerCase());
-      return matchSubject && matchSearch;
-    });
-  }, [gradebook, gbFilterSubject, gbSearchQuery]);
+      const matchClass = gbFilterClass === 'all' || g.class_group === gbFilterClass;
+
+      const matchSearch = gbSearchQuery === '' || 
+                          g.student_name.toLowerCase().includes(gbSearchQuery.toLowerCase()) || 
+                          g.subject.toLowerCase().includes(gbSearchQuery.toLowerCase()) ||
+                          g.class_group?.toLowerCase().includes(gbSearchQuery.toLowerCase()) || 
+                          g.student_id_number?.toLowerCase().includes(gbSearchQuery.toLowerCase()); 
+      return matchSubject && matchClass && matchSearch; 
+    }).sort((a, b) => a.student_name.localeCompare(b.student_name, 'sq')); 
+  }, [gradebook, gbFilterSubject, gbFilterClass, gbSearchQuery]); 
+
 
   // Grupim sipas lëndes
   const gbGrouped = useMemo(() => {
@@ -342,12 +494,25 @@ export default function Dashboard() {
     return groups;
   }, [gbFiltered]);
 
+
   const validateGbForm = () => {
     const errors = {};
     if (!gbForm.subject.trim()) errors.subject = "Lënda është e detyrueshme.";
-    if (!gbForm.student_name.trim()) errors.student_name = "Emri i studentit është i detyrueshëm.";
-    const max = gbScale === '1-5' ? 5 : 10;
-    ['period_1', 'period_2', 'period_3'].forEach((p, i) => {
+    
+    // Validimi i detajeve të studentit varet nga modaliteti
+    if (gbEditingId) { // Në modalitetin e editimit, validimi i rregullt
+        if (!gbForm.student_name.trim()) errors.student_name = "Emri i studentit është i detyrueshëm.";
+        if (!gbForm.class_group.trim()) errors.class_group = "Klasa/Grupi është e detyrueshme.";
+    } else if (gbAddMode === 'new') { // Shtim i studentit të ri
+        if (!gbForm.student_name.trim()) errors.student_name = "Emri i studentit është i detyrueshëm.";
+        if (!gbForm.class_group.trim()) errors.class_group = "Klasa/Grupi është e detyrueshme.";
+    } else if (gbAddMode === 'existing') { // Shtim lënde për student ekzistues
+        if (!gbSelectedExistingStudent) errors.student_name = "Ju lutem zgjidhni një student ekzistues.";
+        // Të dhënat e studentit do të jenë pre-mbushur, kështu që nuk i validojmë këtu
+    }
+
+    const max = gbForm.scale === '1-5' ? 5 : 10;
+    ['period_1', 'period_2', 'period_3'].forEach((p) => {
       const val = gbForm[p];
       if (val !== '' && val !== null) {
         const num = parseFloat(val);
@@ -358,19 +523,35 @@ export default function Dashboard() {
     return Object.keys(errors).length === 0;
   };
 
+
+
+
   const handleGbSave = async () => {
     if (!validateGbForm()) return;
     setGbSaving(true);
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      const payload = { ...gbForm, scale: gbScale };
+      const payload = { ...gbForm }; // KORRIGJIM: Perdoret gjithe gbForm direkt, qe permban gbForm.scale
       const method = gbEditingId ? 'PUT' : 'POST';
       if (gbEditingId) payload.id = gbEditingId;
       const res = await fetch('/api/v1/gradebook', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
       if (data.success) {
         setGbShowForm(false); setGbEditingId(null);
-        setGbForm({ subject: '', student_name: '', period_1: '', period_2: '', period_3: '' }); setGbFormErrors({});
+        // Pastro formen, por tashme duke perdorur vlerat default te gbForm
+        setGbForm({ 
+            subject: '', 
+            student_name: '', 
+            class_group: '',       
+            student_id_number: '', 
+            email_contact: '',     
+            period_1: '', 
+            period_2: '', 
+            period_3: '',
+            notes: '',             
+            scale: '1-10'         // Ktheje ne shkallen default
+        });
+        setGbFormErrors({});
         fetchGradebook(gbFilterSubject);
       } else { setGbFormErrors({ general: data.error || "Gabim gjatë ruajtjes." }); }
     } catch { setGbFormErrors({ general: "Gabim lidhje. Provoni përsëri." }); }
@@ -378,12 +559,26 @@ export default function Dashboard() {
   };
 
   const handleGbEdit = (student) => {
-    setGbForm({ subject: student.subject, student_name: student.student_name, period_1: student.period_1 ?? '', period_2: student.period_2 ?? '', period_3: student.period_3 ?? '' });
-    setGbScale(student.scale || '1-10');
+    setGbAddMode('new'); // Kur editohet nje rresht specifik, e trajtojme si edit te nje "rekordi" te ri
+    setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen e studentit ekzistues
+    setGbForm({ 
+      subject: student.subject, 
+      student_name: student.student_name, 
+      class_group: student.class_group || '',       
+      student_id_number: student.student_id_number || '', 
+      email_contact: student.email_contact || '',     
+      period_1: student.period_1 ?? '', 
+      period_2: student.period_2 ?? '', 
+      period_3: student.period_3 ?? '',
+      notes: student.notes || '',                    
+      scale: student.scale || '1-10'                 
+    });
     setGbEditingId(student.id);
     setGbShowForm(true);
     setGbFormErrors({});
   };
+
+
 
   const handleGbDelete = async (id) => {
     if (!confirm("A jeni i sigurt që doni ta fshini këtë student?")) return;
@@ -396,8 +591,25 @@ export default function Dashboard() {
   };
 
   const handleGbCancel = () => { setGbShowForm(false); setGbEditingId(null);
-    setGbForm({ subject: '', student_name: '', period_1: '', period_2: '', period_3: '' }); setGbFormErrors({}); 
+    setGbForm({ 
+      subject: '', 
+      student_name: '', 
+      class_group: '',       
+      student_id_number: '', 
+      email_contact: '',     
+      period_1: '', 
+      period_2: '', 
+      period_3: '',
+      notes: '',             
+      scale: '1-10'          
+    }); 
+    setGbFormErrors({}); 
+    setGbAddMode('new'); // Kthejme modalitetin ne 'new'
+    setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen e studentit ekzistues
   };
+
+
+
 
   // ─── EXPORT GRADEBOOK PDF ─────────────────────────────────────────────────
   const handleGbExportPDF = () => {
@@ -408,7 +620,11 @@ export default function Dashboard() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(30, 58, 138);
     doc.text("REGJISTRI I NOTAVE", pageWidth / 2, y, { align: 'center' }); y += 8;
     doc.setFontSize(10); doc.setTextColor(100); doc.setFont("helvetica", "normal");
-    doc.text(`Shkalla: ${gbScale}  |  Data: ${new Date().toLocaleDateString('sq-AL')}`, pageWidth / 2, y, { align: 'center' }); y += 10;
+        // Kjo linjë nuk ka më kuptim sepse shkalla është per student, mund ta heqim ose ta modifikojmë
+    // doc.text(`Shkalla: ${gbScale}  |  Data: ${new Date().toLocaleDateString('sq-AL')}`, pageWidth / 2, y, { align: 'center' }); y += 10;
+    // Ose mund të shfaqim vetëm datën
+    doc.text(`Data: ${new Date().toLocaleDateString('sq-AL')}`, pageWidth / 2, y, { align: 'center' }); y += 10;
+
     doc.setDrawColor(200, 210, 230); doc.line(15, y, pageWidth - 15, y); y += 8;
     Object.entries(gbGrouped).forEach(([subject, students]) => {
       if (y > 260) { doc.addPage(); y = 20; }
@@ -820,7 +1036,7 @@ export default function Dashboard() {
                     );
                   })}
                 </div>
-                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.4 }} className="mb-10 h-[300px] md:h-[350px] bg-white p-4 md:p-6 rounded-2xl border border-slate-100 shadow-sm overflow-hidden"><AnalyticsChart /></motion.div>
+                <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35, duration: 0.4 }} className="mb-10 h-[300px] md:h-[350px] bg-white p-4 md:p-6 rounded-2xl border border-slate-100 shadow-sm overflow-hidden"><AnalyticsChart data={stats.chartData} /></motion.div>
               </motion.div>
             )}
 
@@ -919,8 +1135,8 @@ export default function Dashboard() {
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><BookOpen className="text-blue-500" size={20} /> Gjenero Materiale</h2>
                     <div className="space-y-5">
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="p.sh. Matematikë" value={materialInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, subject: e.target.value}); if (materialFieldErrors.subject) setMaterialFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.subject}</p>}</div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="p.sh. Klasa 10" value={materialInput.level} onChange={(e) => setMaterialInput({...materialInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="Vendos Lënden" value={materialInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, subject: e.target.value}); if (materialFieldErrors.subject) setMaterialFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.subject}</p>}</div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="Vendos Nivelin" value={materialInput.level} onChange={(e) => setMaterialInput({...materialInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="p.sh. Trigonometria" value={materialInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, topic: e.target.value}); if (materialFieldErrors.topic) setMaterialFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.topic}</p>}</div>
                       <button onClick={handleGenerateMaterials} disabled={loading || isSubmitting.current} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}<span>{loading ? 'Duke gjeneruar...' : 'Gjenero Materialin'}</span></button>
                     </div>
@@ -941,7 +1157,7 @@ export default function Dashboard() {
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 h-fit lg:sticky lg:top-6">
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><ClipboardList className="text-blue-500" size={20} /> Gjenero Detyra</h2>
                     <div className="space-y-5">
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="p.sh. Matematikë" value={homeworkInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, subject: e.target.value}); if (homeworkFieldErrors.subject) setHomeworkFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.subject}</p>}</div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="Vendos Lënden" value={homeworkInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, subject: e.target.value}); if (homeworkFieldErrors.subject) setHomeworkFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.subject}</p>}</div>
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="p.sh. Integralet" value={homeworkInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, topic: e.target.value}); if (homeworkFieldErrors.topic) setHomeworkFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.topic}</p>}</div>
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="p.sh. Viti 2 Fakultet" value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
                       <div className="grid grid-cols-2 gap-4">
@@ -985,29 +1201,47 @@ export default function Dashboard() {
               <motion.div key="gradebook" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
 
                 {/* Header */}
+                {/* Rregullojmë gap dhe wrap për butona */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase italic tracking-tighter flex items-center gap-2"><BookMarked className="text-blue-600" size={24} /> Regjistri i Notave</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Menaxho notat e studentëve sipas lëndës</p>
                   </div>
-                  <div className="flex items-center gap-3">
-                    {/* Butoni shkalla */}
-                    <div className="flex bg-white border border-slate-200 rounded-2xl p-1 shadow-sm">
-                      <button onClick={() => setGbScale('1-10')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${gbScale === '1-10' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>1–10</button>
-                      <button onClick={() => setGbScale('1-5')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all ${gbScale === '1-5' ? 'bg-blue-600 text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>1–5</button>
-                    </div>
+                  {/* Butonat tani përdorin flex-wrap për të shkuar në rresht të ri në ekranet e vogla */}
+                  <div className="flex flex-wrap justify-end gap-3">
                     {/* Export PDF */}
                     {gradebook.length > 0 && (
-                      <button onClick={handleGbExportPDF} className="flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100">
+                      <button onClick={handleGbExportPDF} className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100">
                         <FileDown size={14} /> PDF
                       </button>
                     )}
+                    
                     {/* Butoni shto */}
-                    <button onClick={() => { setGbShowForm(true); setGbEditingId(null); setGbForm({ subject: '', student_name: '', period_1: '', period_2: '', period_3: '' }); setGbFormErrors({}); }} className="flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
+                    <button onClick={() => { 
+                        setGbShowForm(true); 
+                        setGbEditingId(null); // Sigurohemi qe nuk jemi ne edit mode
+                        setGbAddMode('new');  // Default to adding a new student
+                        setGbSelectedExistingStudent(null); // Ensure no existing student is selected
+                        setGbForm({ // Reset form fields to default
+                            subject: '', 
+                            student_name: '', 
+                            class_group: '',        
+                            student_id_number: '',  
+                            email_contact: '',      
+                            period_1: '', 
+                            period_2: '', 
+                            period_3: '',
+                            notes: '',               
+                            scale: '1-10'           
+                        }); 
+                        setGbFormErrors({}); 
+                    }} className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
                       <Plus size={16} /> Shto Student
                     </button>
                   </div>
                 </div>
+
+
 
                 {/* VIEW PËR NOTAT (Default) */}
                 {gradebookSubTab === 'grades' && (
@@ -1015,46 +1249,171 @@ export default function Dashboard() {
                     {/* Error */}
                     {gradebookError && (<div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span>{gradebookError}</span><button onClick={() => setGradebookError(null)} className="ml-auto"><X size={14}/></button></div>)}
 
-                    {/* Formulari shto/edito */}
-                    <AnimatePresence>
-                      {gbShowForm && (
-                        <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="bg-white rounded-3xl border border-blue-100 shadow-lg p-6 md:p-8">
-                          <h3 className="text-sm font-black text-slate-700 uppercase italic tracking-tighter mb-6 flex items-center gap-2">
-                            {gbEditingId ? <Pencil size={16} className="text-blue-500" /> : <Plus size={16} className="text-blue-500" />}
-                            {gbEditingId ? 'Ndrysho të dhënat' : 'Shto Student të Ri'}
-                          </h3>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                            {/* Lënda */}
-                            <div className="lg:col-span-1">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Lënda *</label>
-                              <input type="text" placeholder="p.sh. Matematikë" value={gbForm.subject} onChange={(e) => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
-                              {gbFormErrors.subject && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.subject}</p>}
-                            </div>
-                            {/* Emri */}
-                            <div className="lg:col-span-1">
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Studenti *</label>
-                              <input type="text" placeholder="Emri Mbiemri" value={gbForm.student_name} onChange={(e) => { setGbForm({...gbForm, student_name: e.target.value}); if (gbFormErrors.student_name) setGbFormErrors(p => ({...p, student_name: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.student_name ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
-                              {gbFormErrors.student_name && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.student_name}</p>}
-                            </div>
-                            {/* Periudha 1 */}
+<AnimatePresence>
+  {gbShowForm && (
+    <motion.div initial={{ opacity: 0, y: -10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -10 }} className="bg-white rounded-3xl border border-blue-100 shadow-lg p-6 md:p-8">
+      <h3 className="text-sm font-black text-slate-700 uppercase italic tracking-tighter mb-6 flex items-center gap-2">
+        {gbEditingId ? <Pencil size={16} className="text-blue-500" /> : <Plus size={16} className="text-blue-500" />}
+        {gbEditingId ? 'Ndrysho të dhënat e studentit' : (gbAddMode === 'new' ? 'Shto student të ri' : 'Shto lëndë për student ekzistues')}
+      </h3>
+      
+      {/* NEW: Zgjedhës modaliteti: Shto Student të Ri / Shto Lëndë për Student Ekzistues */}
+      {!gbEditingId && ( // Shfaqet vetëm në modalitetin e shtimit, jo të editimit
+        <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
+            <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Modaliteti i Shtimit</label>
+            <div className="flex gap-2">
+                <button 
+                    type="button" 
+                    onClick={() => {
+                        setGbAddMode('new');
+                        setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen
+                        setGbForm(prev => ({ // Pastrojme detajet e studentit, por jo lenden/notat
+                            ...prev, 
+                            student_name: '', class_group: '', student_id_number: '', email_contact: '', notes: '' 
+                        }));
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${gbAddMode === 'new' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                >
+                    Student i Ri
+                </button>
+                <button 
+                    type="button" 
+                    onClick={() => {
+                        setGbAddMode('existing');
+                        setGbForm(prev => ({ // Pastrojme detajet e studentit, por jo lenden/notat
+                            ...prev, 
+                            student_name: '', class_group: '', student_id_number: '', email_contact: '', notes: '' 
+                        }));
+                        // Nese ka vetem 1 student, zgjidhe ate automatikisht
+                        if (gbUniqueStudents.length === 1) {
+                            setGbSelectedExistingStudent(gbUniqueStudents[0]);
+                            setGbForm(prev => ({
+                                ...prev,
+                                student_name: gbUniqueStudents[0].student_name || '',
+                                class_group: gbUniqueStudents[0].class_group || '',
+                                student_id_number: gbUniqueStudents[0].student_id_number || '',
+                                email_contact: gbUniqueStudents[0].email_contact || '',
+                                notes: gbUniqueStudents[0].notes || '',
+                            }));
+                        }
+                    }}
+                    className={`flex-1 py-2.5 rounded-xl text-xs font-black uppercase transition-all ${gbAddMode === 'existing' ? 'bg-blue-600 text-white shadow-sm' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                >
+                    Student Ekzistues
+                </button>
+            </div>
+        </div>
+      )}
+
+      {gbAddMode === 'existing' && !gbEditingId && (
+        <div className="mb-6">
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 block italic"><User size={14}/> Zgjidh Studentin Ekzistues *</label>
+          <div className="relative">
+            <select 
+              value={gbSelectedExistingStudent ? (gbSelectedExistingStudent.student_id_number || `${gbSelectedExistingStudent.student_name}-${gbSelectedExistingStudent.class_group}`) : ''}
+              onChange={(e) => {
+                const selectedIdentifier = e.target.value;
+                const student = gbUniqueStudents.find(s => (s.student_id_number || `${s.student_name}-${s.class_group}`) === selectedIdentifier);
+                setGbSelectedExistingStudent(student);
+                if (student) {
+                  setGbForm(prev => ({
+                    ...prev,
+                    student_name: student.student_name || '',
+                    class_group: student.class_group || '',
+                    student_id_number: student.student_id_number || '',
+                    email_contact: student.email_contact || '',
+                    notes: student.notes || '',
+                    // Lenda dhe notat mbeten te lira per tu shtuar
+                  }));
+                } else {
+                  setGbForm(prev => ({
+                    ...prev,
+                    student_name: '', class_group: '', student_id_number: '', email_contact: '', notes: ''
+                  }));
+                }
+              }}
+              className="appearance-none w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all"
+            >
+              <option value="">-- Zgjidh Student --</option>
+              {gbUniqueStudents.map(s => (
+                <option 
+                  key={s.student_id_number || `${s.student_name}-${s.class_group}`} 
+                  value={s.student_id_number || `${s.student_name}-${s.class_group}`}
+                >
+                  {s.student_name} ({s.class_group || 'Pa Klasë'}) {s.student_id_number ? `[ID: ${s.student_id_number}]` : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+          </div>
+        </div>
+      )}
+
+      {/* Seksioni i Detajeve të Studentit */}
+      <h4 className="text-xs font-bold text-slate-600 mb-4 flex items-center gap-2"><User size={14} className="text-blue-500"/> Detajet e Studentit</h4>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
+        {/* Emri Mbiemri */}
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><User size={14}/> Studenti *</label>
+          <input type="text" placeholder="Emri Mbiemri" value={gbForm.student_name} onChange={(e) => { setGbForm({...gbForm, student_name: e.target.value}); if (gbFormErrors.student_name) setGbFormErrors(p => ({...p, student_name: null})); }} 
+            className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.student_name ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} 
+            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly nëse është student ekzistues dhe jo në edit mode
+          />
+          {gbFormErrors.student_name && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.student_name}</p>}
+        </div>
+        
+        {/* Klasa / Grupi */}
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Users size={14}/> Klasa / Grupi *</label>
+          <input type="text" placeholder="p.sh. 10-A, Grupi 3" value={gbForm.class_group} onChange={(e) => { setGbForm({...gbForm, class_group: e.target.value}); if (gbFormErrors.class_group) setGbFormErrors(p => ({...p, class_group: null})); }} 
+            className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.class_group ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} 
+            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+          />
+          {gbFormErrors.class_group && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.class_group}</p>}
+        </div>
+        
+        {/* ID / Numri Amzës */}
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Hash size={14}/> ID / Nr. Regjistrit (Opsionale)</label>
+          <input type="text" placeholder="p.sh. 123456" value={gbForm.student_id_number} onChange={(e) => setGbForm({...gbForm, student_id_number: e.target.value})} 
+            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all" 
+            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+          />
+        </div>
+
+        {/* Email / Kontakt */}
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Mail size={14}/> Email / Kontakt (Opsionale)</label>
+          <input type="email" placeholder="p.sh. student@example.com" value={gbForm.email_contact} onChange={(e) => setGbForm({...gbForm, email_contact: e.target.value})} 
+            className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all" 
+            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+          />
+        </div>
+
+        {/* Lënda (Mbetet gjithmonë e editueshme) */}
+        <div>
+          <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Book size={14}/> Lënda *</label>
+          <input type="text" placeholder="p.sh. Matematikë" value={gbForm.subject} onChange={(e) => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
+          {gbFormErrors.subject && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.subject}</p>}
+        </div>
+      </div>
+
+      {/* Seksioni i Notave */}
+      {/* ... (ky seksion mbetet i njëjtë) ... */}
+
+      {/* Seksioni i Shënimeve */}
+      <h4 className="text-xs font-bold text-slate-600 mb-4 flex items-center gap-2"><BookMarked size={14} className="text-purple-500"/> Shënime & Komente</h4>
+                          <div className="mb-6">
+                            {/* Shënime */}
                             <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Periudha 1</label>
-                              <input type="number" step="0.1" min="1" max={gbScale === '1-5' ? 5 : 10} placeholder={gbScale === '1-5' ? '1-5' : '1-10'} value={gbForm.period_1} onChange={(e) => { setGbForm({...gbForm, period_1: e.target.value}); if (gbFormErrors.period_1) setGbFormErrors(p => ({...p, period_1: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.period_1 ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
-                              {gbFormErrors.period_1 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_1}</p>}
-                            </div>
-                            {/* Periudha 2 */}
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Periudha 2</label>
-                              <input type="number" step="0.1" min="1" max={gbScale === '1-5' ? 5 : 10} placeholder={gbScale === '1-5' ? '1-5' : '1-10'} value={gbForm.period_2} onChange={(e) => { setGbForm({...gbForm, period_2: e.target.value}); if (gbFormErrors.period_2) setGbFormErrors(p => ({...p, period_2: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.period_2 ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
-                              {gbFormErrors.period_2 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_2}</p>}
-                            </div>
-                            {/* Periudha 3 */}
-                            <div>
-                              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Periudha 3</label>
-                              <input type="number" step="0.1" min="1" max={gbScale === '1-5' ? 5 : 10} placeholder={gbScale === '1-5' ? '1-5' : '1-10'} value={gbForm.period_3} onChange={(e) => { setGbForm({...gbForm, period_3: e.target.value}); if (gbFormErrors.period_3) setGbFormErrors(p => ({...p, period_3: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.period_3 ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
-                              {gbFormErrors.period_3 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_3}</p>}
+                              <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Shënime (Opsionale)</label>
+                              <textarea rows="3" placeholder="Shto shënime ose komente të rëndësishme për studentin..." value={gbForm.notes} onChange={(e) => setGbForm({...gbForm, notes: e.target.value})} 
+                                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all resize-y" 
+                                readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+                              />
                             </div>
                           </div>
+
                           {gbFormErrors.general && <p className="text-[10px] text-red-500 font-bold italic mt-3">{gbFormErrors.general}</p>}
                           <div className="flex gap-3 mt-6">
                             <button onClick={handleGbCancel} className="px-6 py-3 rounded-2xl font-bold uppercase text-xs bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all">Anulo</button>
@@ -1067,24 +1426,53 @@ export default function Dashboard() {
                       )}
                     </AnimatePresence>
 
+
+
                     {/* Filtrime */}
-                    <div className="flex flex-col sm:flex-row gap-3">
+                    {/* Rregullojmë gridin e filtrave për responsive */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                       {/* Kërkim */}
-                      <div className="relative flex-1">
+                      <div className="relative col-span-full"> {/* Kërkimi zë gjithë gjerësinë në të gjitha ekranet */}
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
-                        <input type="text" placeholder="Kërko student ose lëndë..." value={gbSearchQuery} onChange={(e) => setGbSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 transition-all" />
+                        <input type="text" placeholder="Kërko student, lëndë, klasë, ose ID..." value={gbSearchQuery} onChange={(e) => setGbSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 transition-all" />
                       </div>
+                      
                       {/* Filtro sipas lëndes */}
                       {gbSubjects.length > 0 && (
                         <div className="relative">
-                          <select value={gbFilterSubject} onChange={(e) => setGbFilterSubject(e.target.value)} className="appearance-none pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
+                          <select value={gbFilterSubject} onChange={(e) => setGbFilterSubject(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
                             <option value="all">Të gjitha lëndët</option>
                             {gbSubjects.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                         </div>
                       )}
+
+                      {/* NEW: Filtro sipas Klasës/Grupit */}
+                      {gbClasses.length > 0 && (
+                        <div className="relative">
+                          <select value={gbFilterClass} onChange={(e) => setGbFilterClass(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
+                            <option value="all">Të gjitha klasat/grupet</option>
+                            {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                        </div>
+                      )}
+                
+
+
+                      {/* NEW: Filtro sipas Klasës/Grupit */}
+                      {gbClasses.length > 0 && (
+                        <div className="relative">
+                          <select value={gbFilterClass} onChange={(e) => setGbFilterClass(e.target.value)} className="appearance-none pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
+                            <option value="all">Të gjitha klasat/grupet</option>
+                            {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                          </select>
+                          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
+                        </div>
+                      )}
                     </div>
+
 
                     {/* Loading */}
                     {gradebookLoading && (
@@ -1124,12 +1512,13 @@ export default function Dashboard() {
                           <table className="w-full">
                             <thead>
                               <tr className="border-b border-slate-50">
-                                <th className="text-left px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Studenti</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Periudha 1</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Periudha 2</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Periudha 3</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mesatarja</th>
-                                <th className="text-right px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Veprime</th>
+                                {/* Japim një gjerësi minimale për kolona kyçe në ekranet e vogla */}
+                                <th className="text-left px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Studenti</th>
+                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.1</th>
+                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.2</th>
+                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.3</th>
+                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mes.</th>
+                                <th className="text-right px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[100px]">Veprime</th>
                               </tr>
                             </thead>
                             <tbody>
@@ -1138,12 +1527,22 @@ export default function Dashboard() {
                                   <td className="px-6 py-4">
                                     <div className="flex items-center gap-3">
                                       <div className="w-8 h-8 bg-blue-50 rounded-xl flex items-center justify-center shrink-0"><span className="text-[10px] font-black text-blue-500">{student.student_name.charAt(0).toUpperCase()}</span></div>
-                                      <span className="font-bold text-sm text-slate-700">{student.student_name}</span>
+                                      <div> {/* <-- KY <div> I RI MBESHTJELL EMERIN DHE TE DHENAT E REJA */}
+                                        <span className="font-bold text-sm text-slate-700">{student.student_name}</span>
+                                        {/* NEW: Shfaq Klasën/Grupin dhe ID-në */}
+                                        {(student.class_group || student.student_id_number) && (
+                                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                                                {student.class_group} {student.student_id_number && `(${student.student_id_number})`}
+                                            </span>
+                                        )}
+                                      </div>
                                     </div>
                                   </td>
+
                                   <td className="px-4 py-4 text-center"><GradeBadge value={student.period_1} scale={student.scale} /></td>
                                   <td className="px-4 py-4 text-center"><GradeBadge value={student.period_2} scale={student.scale} /></td>
                                   <td className="px-4 py-4 text-center"><GradeBadge value={student.period_3} scale={student.scale} /></td>
+
                                   <td className="px-4 py-4 text-center">
                                     {student.average !== null ? (
                                       <span className="inline-flex items-center justify-center w-12 h-8 rounded-xl text-sm font-black bg-slate-900 text-white">{student.average}</span>
