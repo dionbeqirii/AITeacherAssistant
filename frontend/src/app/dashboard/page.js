@@ -125,7 +125,7 @@ export default function Dashboard() {
     period_2: '', 
     period_3: '',
     notes: '',             // NEW: Notes
-    scale: '1-10'          // NEW: Shkalla e Notave
+    scale: '5-10'          // NEW: Shkalla e Notave
   });
 
   const [gbFormErrors, setGbFormErrors] = useState({});
@@ -515,11 +515,15 @@ export default function Dashboard() {
     }
 
     const max = gbForm.scale === '1-5' ? 5 : 10;
+    const min = gbForm.scale === '5-10' ? 5 : 1; // Shto këtë rresht
     ['period_1', 'period_2', 'period_3'].forEach((p) => {
       const val = gbForm[p];
       if (val !== '' && val !== null) {
         const num = parseFloat(val);
-        if (isNaN(num) || num < 1 || num > max) errors[p] = `Nota duhet të jetë 1-${max}.`;
+        // Ndrysho kushtin këtu:
+        if (isNaN(num) || num < min || num > max) {
+          errors[p] = `Nota duhet të jetë ${min}-${max}.`;
+        }
       }
     });
     setGbFormErrors(errors);
@@ -552,7 +556,7 @@ export default function Dashboard() {
             period_2: '', 
             period_3: '',
             notes: '',             
-            scale: '1-10'         // Ktheje ne shkallen default
+            scale: '5-10'         // Ktheje ne shkallen default
         });
         setGbFormErrors({});
         fetchGradebook(gbFilterSubject);
@@ -574,7 +578,7 @@ export default function Dashboard() {
       period_2: student.period_2 ?? '', 
       period_3: student.period_3 ?? '',
       notes: student.notes || '',                    
-      scale: student.scale || '1-10'                 
+      scale: student.scale || '5-10'                 
     });
     setGbEditingId(student.id);
     setGbShowForm(true);
@@ -604,7 +608,7 @@ export default function Dashboard() {
       period_2: '', 
       period_3: '',
       notes: '',             
-      scale: '1-10'          
+      scale: '5-10'          
     }); 
     setGbFormErrors({}); 
     setGbAddMode('new'); // Kthejme modalitetin ne 'new'
@@ -715,7 +719,8 @@ export default function Dashboard() {
     const errors = {};
     if (!homeworkInput.subject.trim()) errors.subject = "Lënda nuk mund të jetë bosh.";
     if (!homeworkInput.topic.trim()) errors.topic = "Tema nuk mund të jetë bosh.";
-    if (homeworkInput.numTasks < 1 || homeworkInput.numTasks > 10) errors.numTasks = "Numri duhet të jetë 1-10.";
+    if (homeworkInput.numTasks < 1 || homeworkInput.numTasks > 10) 
+   errors.numTasks = "Numri duhet të jetë 5-10.";
     setHomeworkFieldErrors(errors); return Object.keys(errors).length === 0;
   };
 
@@ -1140,7 +1145,7 @@ export default function Dashboard() {
                     <div className="space-y-5">
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="Vendos Lënden" value={materialInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, subject: e.target.value}); if (materialFieldErrors.subject) setMaterialFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.subject}</p>}</div>
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="Vendos Nivelin" value={materialInput.level} onChange={(e) => setMaterialInput({...materialInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="p.sh. Trigonometria" value={materialInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, topic: e.target.value}); if (materialFieldErrors.topic) setMaterialFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.topic}</p>}</div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="Vendos Temën" value={materialInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setMaterialInput({...materialInput, topic: e.target.value}); if (materialFieldErrors.topic) setMaterialFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${materialFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{materialFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{materialFieldErrors.topic}</p>}</div>
                       <button onClick={handleGenerateMaterials} disabled={loading || isSubmitting.current} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}<span>{loading ? 'Duke gjeneruar...' : 'Gjenero Materialin'}</span></button>
                     </div>
                   </section>
@@ -1161,8 +1166,8 @@ export default function Dashboard() {
                     <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><ClipboardList className="text-blue-500" size={20} /> Gjenero Detyra</h2>
                     <div className="space-y-5">
                       <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> Lënda</label><input type="text" placeholder="Vendos Lënden" value={homeworkInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, subject: e.target.value}); if (homeworkFieldErrors.subject) setHomeworkFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.subject}</p>}</div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="p.sh. Integralet" value={homeworkInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, topic: e.target.value}); if (homeworkFieldErrors.topic) setHomeworkFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.topic}</p>}</div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="p.sh. Viti 2 Fakultet" value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> Tema</label><input type="text" placeholder="Vendos Temën" value={homeworkInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, topic: e.target.value}); if (homeworkFieldErrors.topic) setHomeworkFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.topic}</p>}</div>
+                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> Niveli</label><input type="text" placeholder="Vendos Nivelin Shkollor" value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
                       <div className="grid grid-cols-2 gap-4">
                         <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> Nr.</label><input type="number" min="1" max="10" value={homeworkInput.numTasks} onChange={(e) => { setHomeworkInput({...homeworkInput, numTasks: parseInt(e.target.value) || 1}); if (homeworkFieldErrors.numTasks) setHomeworkFieldErrors(p => ({...p, numTasks: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.numTasks ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} /></div>
                         <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Target size={14}/> Tipi</label><select value={homeworkInput.type} onChange={(e) => setHomeworkInput({...homeworkInput, type: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm cursor-pointer"><option value="open">E hapur</option><option value="practical">Praktike</option><option value="mixed">E kombinuar</option></select></div>
@@ -1235,7 +1240,7 @@ export default function Dashboard() {
                             period_2: '', 
                             period_3: '',
                             notes: '',               
-                            scale: '1-10'           
+                            scale: '5-10'           
                         }); 
                         setGbFormErrors({}); 
                     }} className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
@@ -1401,8 +1406,69 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Seksioni i Notave */}
-      {/* ... (ky seksion mbetet i njëjtë) ... */}
+      {/* SEKSIONI I NOTAVE (SHTO KETE PJESE) */}
+      <h4 className="text-xs font-bold text-slate-600 mb-4 mt-8 flex items-center gap-2">
+        <Activity size={14} className="text-emerald-500"/> Notat e Periudhave & Sistemi
+      </h4>
+      
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-slate-50 p-5 rounded-2xl border border-slate-200">
+        {/* Zgjedhja e Sistemit */}
+        <div>
+          <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Sistemi i Notave</label>
+          <select 
+            value={gbForm.scale} 
+            onChange={(e) => setGbForm({...gbForm, scale: e.target.value})}
+            className="w-full p-3 bg-white border border-slate-200 rounded-xl font-bold text-sm outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="1-5">Sistemi 1-5</option>
+            <option value="5-10">Sistemi 5-10</option>
+
+          </select>
+        </div>
+
+        {/* Period 1 */}
+        <div>
+          <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 1</label>
+          <input 
+            type="number" 
+            step="0.1"
+            placeholder="Nota 1"
+            value={gbForm.period_1} 
+            onChange={(e) => setGbForm({...gbForm, period_1: e.target.value})}
+            className={`w-full p-3 bg-white border rounded-xl font-bold text-sm outline-none transition-all ${gbFormErrors.period_1 ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:ring-2 focus:ring-blue-500'}`}
+          />
+          {gbFormErrors.period_1 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_1}</p>}
+        </div>
+
+        {/* Period 2 */}
+        <div>
+          <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 2</label>
+          <input 
+            type="number" 
+            step="0.1"
+            placeholder="Nota 2"
+            value={gbForm.period_2} 
+            onChange={(e) => setGbForm({...gbForm, period_2: e.target.value})}
+            className={`w-full p-3 bg-white border rounded-xl font-bold text-sm outline-none transition-all ${gbFormErrors.period_2 ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:ring-2 focus:ring-blue-500'}`}
+          />
+          {gbFormErrors.period_2 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_2}</p>}
+        </div>
+
+        {/* Period 3 */}
+        <div>
+          <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 3</label>
+          <input 
+            type="number" 
+            step="0.1"
+            placeholder="Nota 3"
+            value={gbForm.period_3} 
+            onChange={(e) => setGbForm({...gbForm, period_3: e.target.value})}
+            className={`w-full p-3 bg-white border rounded-xl font-bold text-sm outline-none transition-all ${gbFormErrors.period_3 ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:ring-2 focus:ring-blue-500'}`}
+          />
+          {gbFormErrors.period_3 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_3}</p>}
+        </div>
+      </div>
+
 
       {/* Seksioni i Shënimeve */}
       <h4 className="text-xs font-bold text-slate-600 mb-4 flex items-center gap-2"><BookMarked size={14} className="text-purple-500"/> Shënime & Komente</h4>
