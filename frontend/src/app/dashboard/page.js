@@ -385,9 +385,12 @@ export default function Dashboard() {
     }
   }, [router]);
 
-  useEffect(() => {
-    if (activeTab === 'gradebook') fetchGradebook(gbFilterSubject);
-  }, [activeTab, gbFilterSubject, fetchGradebook]);
+    // Gjej këtë pjesë rreth rreshtit 218:
+    useEffect(() => {
+      if (activeTab === 'gradebook') fetchGradebook('all'); // Gjithmonë merr të gjitha fillimisht
+    }, [activeTab, fetchGradebook]); 
+    // Hoqëm gbFilterSubject nga dependency që të mos bëjë re-fetch dhe të fshijë lëndët e tjera
+
 
   // USE EFFECT I SHTUAR PËR MUNGESAT
   useEffect(() => {
