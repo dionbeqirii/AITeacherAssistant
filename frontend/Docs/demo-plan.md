@@ -14,7 +14,7 @@ Qëllimi kryesor është të automatizojë:
 - menaxhimin e regjistrit të notave,
 - dhe evidentimin e mungesave.
 
-Target përdoruesi është profesori i shkollës së mesme/universitetit, i cili dëshiron të kursejë kohë dhe të ketë një sistem të unifikuar për vlerësim, nota dhe mungesa.
+Target përdoruesi është profesori i shkollës së ulta/mesme/universitetit, i cili dëshiron të kursejë kohë dhe të ketë një sistem të unifikuar për vlerësim, nota dhe mungesa.
 
 ---
 
