@@ -9,8 +9,9 @@ import {
   User, Bell, X, Camera, Shield, UserCircle, Menu, Download, BookOpen, Layers, ListOrdered,
   MessageSquare, Star, TrendingUp, Award, Zap, Activity, ClipboardList, Calendar, Target,
   Save, FileDown, Loader2, BookMarked, Plus, Pencil, Search, ChevronDown, Check,
-  // IKONAT E REJA KËTU:
-  Users, Hash, Mail, Book 
+  Users, Hash, Mail, Book, 
+  // SHTO KËTO IKONA KËTU:
+  Timer, Play, Pause, RotateCcw
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
@@ -272,7 +273,82 @@ export default function Dashboard() {
   };
 
 
+// ─── STATE PËR TIMER & STOPWATCH ──────────────────────────────────────────
+  const [timerMode, setTimerMode] = useState('timer'); 
+  const [time, setTime] = useState(15 * 60); 
+  const [isTimerActive, setIsTimerActive] = useState(false);
+  const [inputMinutes, setInputMinutes] = useState(15);
+  
+  const [isTimeUp, setIsTimeUp] = useState(false);
+  const audioRef = useRef(null);
 
+  // Inicializojmë zilen vetëm në Client-Side
+  useEffect(() => {
+    audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
+    audioRef.current.loop = true; 
+  }, []);
+
+  useEffect(() => {
+    let interval = null;
+    if (isTimerActive) {
+      interval = setInterval(() => {
+        setTime((prevTime) => {
+          if (timerMode === 'timer') {
+            if (prevTime <= 1) {
+              setIsTimerActive(false);
+              
+              // HAPIM MODALIN E ZILES DHE LUAJMË MUZIKËN
+              setIsTimeUp(true);
+              if (audioRef.current) {
+                audioRef.current.play().catch(e => console.error("Gabim me zilen:", e));
+              }
+              
+              return 0;
+            }
+            return prevTime - 1;
+          } else {
+            return prevTime + 1;
+          }
+        });
+      }, 1000);
+    } else if (!isTimerActive && time !== 0) {
+      clearInterval(interval);
+    }
+    return () => clearInterval(interval);
+  }, [isTimerActive, timerMode]);
+
+  // Përditëso kohën automatikisht kur ndërron mode ose vendos minuta të reja
+  useEffect(() => {
+    if (!isTimerActive) {
+      setTime(timerMode === 'timer' ? (inputMinutes || 0) * 60 : 0);
+    }
+  }, [timerMode, inputMinutes, isTimerActive]);
+
+  // Funksioni që mbyll zilen dhe rikthen kohën
+  const dismissTimeUp = () => {
+    setIsTimeUp(false);
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+    setTime(timerMode === 'timer' ? (inputMinutes || 0) * 60 : 0);
+  };
+
+  const toggleTimer = () => setIsTimerActive(!isTimerActive);
+  
+  // VETËM NJË resetTimer KËTU
+  const resetTimer = () => {
+    setIsTimerActive(false);
+    dismissTimeUp(); 
+  };
+
+  const formatTime = (totalSeconds) => {
+    const h = Math.floor(totalSeconds / 3600);
+    const m = Math.floor((totalSeconds % 3600) / 60).toString().padStart(2, '0');
+    const s = (totalSeconds % 60).toString().padStart(2, '0');
+    return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
+  };
+  // ──────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const checkUser = async () => {
@@ -989,7 +1065,7 @@ export default function Dashboard() {
           <button onClick={() => { setActiveTab('ai_exams'); setExamQuestions([]); setIsSaved(false); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'ai_exams' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><Sparkles size={20} /> AI Exams</button>
           <button onClick={() => { setActiveTab('learning_materials'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'learning_materials' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><BookOpen size={20} /> AI Materials</button>
           <button onClick={() => { setActiveTab('homework'); setIsSidebarOpen(false); }} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all ${activeTab === 'homework' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><ClipboardList size={20} /> AI Homework</button>
-          <button onClick={() => { setActiveTab('timer_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'timer_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Timer</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter">SOON</span></button>
+          <button onClick={() => { setActiveTab('timer_soon'); setIsSidebarOpen(false); }} className={`w-full flex items-center justify-between px-4 py-3 rounded-xl transition-all ${activeTab === 'timer_soon' ? 'bg-blue-50 text-blue-600 font-bold shadow-sm' : 'hover:bg-slate-100 text-slate-500'}`}><div className="flex items-center gap-3"><BarChart3 size={20} /> Timer</div><span className="text-[8px] bg-slate-100 px-1 rounded text-slate-400 font-bold tracking-tighter"></span></button>
         </nav>
         <div className="mt-auto pt-6 border-t border-slate-100 flex flex-col gap-2">
           <button onClick={() => { setIsFeedbackOpen(true); setIsSidebarOpen(false); }} className="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-slate-500 hover:bg-slate-100 transition-all font-bold uppercase text-xs italic tracking-widest"><MessageSquare size={20} /> Feedback</button>
@@ -1737,15 +1813,83 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-            {/* ── timer SOON ───────────────────────────────────────────────── */}
+{/* ── TIMER & STOPWATCH ───────────────────────────────────────────────── */}
             {activeTab === 'timer_soon' && (
-              <motion.div key="soon" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="h-full flex items-center justify-center py-10">
-                <div className="text-center bg-white p-8 md:p-16 rounded-[32px] md:rounded-[48px] border border-slate-100 shadow-2xl max-w-lg relative overflow-hidden mx-4">
-                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-400 via-indigo-500 to-purple-600"></div>
-                  <div className="bg-blue-50 w-16 h-16 md:w-20 md:h-20 rounded-3xl flex items-center justify-center mx-auto mb-6 text-blue-600"><Lock size={32} /></div>
-                  <h2 className="text-xl md:text-3xl font-black text-slate-800 mb-4 tracking-tighter uppercase italic">Coming Soon...</h2>
-                  <p className="text-sm md:text-base text-slate-500 font-medium leading-relaxed italic">The <span className="text-blue-600 font-bold italic">Detailed Timer</span> module is under development.</p>
-                  <div className="mt-8 flex items-center justify-center gap-2 text-blue-400 font-black text-[10px] md:text-xs uppercase tracking-widest animate-pulse italic"><Clock size={16} /> Work in progress</div>
+              <motion.div key="timer" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="h-full flex items-center justify-center py-10">
+                <div className="bg-white p-10 md:p-14 rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-2xl relative overflow-hidden">
+                  <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-500"></div>
+                  
+                  {/* Header */}
+                  <div className="text-center mb-10">
+                    <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-blue-600 shadow-inner">
+                      <Timer size={32} />
+                    </div>
+                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">Menaxhimi i Kohës</h2>
+                    <p className="text-slate-400 font-medium text-sm mt-1">Përdore për teste, kuize ose detyra praktike.</p>
+                  </div>
+
+                  {/* Zgjedhja e Mode (Timer / Stopwatch) */}
+                  <div className="flex bg-slate-50 p-1.5 rounded-2xl mb-10">
+                    <button 
+                      onClick={() => { setTimerMode('timer'); setIsTimerActive(false); }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${timerMode === 'timer' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      ⏳ Numërim Mbrapsht
+                    </button>
+                    <button 
+                      onClick={() => { setTimerMode('stopwatch'); setIsTimerActive(false); }}
+                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${timerMode === 'stopwatch' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                    >
+                      ⏱️ Kronometër
+                    </button>
+                  </div>
+
+                  {/* Ekrani i Kohës */}
+                  <div className="text-center mb-10">
+                    <div className={`text-8xl md:text-9xl font-black tracking-tighter ${time <= 60 && timerMode === 'timer' && time > 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
+                      {formatTime(time)}
+                    </div>
+                  </div>
+
+{/* Input për të vendosur minutat (Vetëm për Timer) */}
+                  {timerMode === 'timer' && (
+                    <div className="flex justify-center mb-10">
+                      <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
+                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Minuta:</span>
+                        <input 
+                          type="number" 
+                          min="1"
+                          value={inputMinutes === '' ? '' : inputMinutes}
+                          onChange={(e) => {
+                            const val = e.target.value === '' ? '' : parseInt(e.target.value);
+                            setInputMinutes(val);
+                            if (!isTimerActive) setTime((val || 0) * 60);
+                          }}
+                          disabled={isTimerActive}
+                          className="w-20 bg-transparent text-center font-black text-xl text-slate-700 outline-none"
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Butonat e Kontrollit */}
+                  <div className="flex justify-center gap-4">
+                    <button 
+                      onClick={toggleTimer}
+                      className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-white shadow-lg transition-all hover:scale-105 active:scale-95 ${isTimerActive ? 'bg-amber-500 shadow-amber-200 hover:bg-amber-600' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700'}`}
+                    >
+                      {isTimerActive ? <Pause size={20} /> : <Play size={20} />}
+                      {isTimerActive ? 'Pauzë' : 'Fillo Kohën'}
+                    </button>
+
+                    <button 
+                      onClick={resetTimer}
+                      className="flex items-center gap-2 px-6 py-4 rounded-2xl font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 hover:text-slate-700 transition-all active:scale-95 border border-slate-100"
+                    >
+                      <RotateCcw size={20} /> Reset
+                    </button>
+                  </div>
+                  
                 </div>
               </motion.div>
             )}
@@ -1753,6 +1897,54 @@ export default function Dashboard() {
           </AnimatePresence>
         </main>
       </div>
+{/* ── MODALI I ZILES (FRAMELESS - PA TABELË TË BARDHË) ── */}
+      <AnimatePresence>
+        {isTimeUp && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.8 }} 
+              animate={{ opacity: 1, scale: 1 }} 
+              exit={{ opacity: 0, scale: 0.8 }}
+              className="flex flex-col items-center justify-center gap-8 w-[240px] h-[240px] relative"
+            >
+              {/* Ikona e Ziles që noton me hije të fortë */}
+              <div className="relative">
+                {/* Efekt shkëlqimi prapa ziles që të mos duket "e vdekur" pa sfond */}
+                <div className="absolute inset-0 bg-red-500 blur-[40px] opacity-40 animate-pulse"></div>
+                
+                <motion.div 
+                  animate={{ 
+                    rotate: [-15, 15, -15, 15, 0],
+                    scale: [1, 1.1, 1]
+                  }}
+                  transition={{ repeat: Infinity, duration: 0.5 }}
+                  className="relative z-10 w-24 h-24 bg-slate-900 rounded-[35px] flex items-center justify-center text-red-500 shadow-[0_20px_50px_rgba(0,0,0,0.3)]"
+                >
+                  <Bell size={45} strokeWidth={2.5} />
+                </motion.div>
+              </div>
+
+              {/* Teksti pa sfond */}
+              <div className="text-center z-10">
+                <h2 className="text-2xl font-black text-white tracking-tight drop-shadow-md">
+                  Koha mbaroi!
+                </h2>
+                <p className="text-[10px] font-bold text-red-400 uppercase tracking-[0.3em] mt-1 drop-shadow-sm">
+                  Alarmi Aktiv
+                </p>
+              </div>
+
+              {/* Butoni që noton */}
+              <button 
+                onClick={dismissTimeUp}
+                className="w-full bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-[0.2em] py-4 rounded-2xl shadow-[0_15px_30px_rgba(239,68,68,0.4)] transition-all active:scale-95 active:shadow-none"
+              >
+                Ndal Zilen
+              </button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
       {renderedProfileModal}
       {renderedFeedbackModal}
     </div>
