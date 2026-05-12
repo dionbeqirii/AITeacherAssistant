@@ -19,6 +19,18 @@
   }
 }
 
+/* ─── RREGULLIMI I ZOOM-IT (Zvogëlon 100% në ~80%) ─── */
+html {
+  font-size: 13px; /* Zvogëlon të gjithë komponentët në Desktop */
+}
+
+@media (max-width: 768px) {
+  html {
+    font-size: 16px; /* E kthen normale për ekranet e Telefonit */
+  }
+}
+/* ──────────────────────────────────────────────────── */
+
 body {
   background: var(--background);
   color: var(--foreground);

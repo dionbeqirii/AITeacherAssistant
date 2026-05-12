@@ -10,7 +10,6 @@ import {
   MessageSquare, Star, TrendingUp, Award, Zap, Activity, ClipboardList, Calendar, Target,
   Save, FileDown, Loader2, BookMarked, Plus, Pencil, Search, ChevronDown, Check,
   Users, Hash, Mail, Book, 
-  // SHTO KËTO IKONA KËTU:
   Timer, Play, Pause, RotateCcw
 } from 'lucide-react';
 import dynamic from 'next/dynamic';
@@ -515,8 +514,8 @@ export default function Dashboard() {
   // NEW: Lista unike e klasave/grupeve për filter
   const gbClasses = useMemo(() => {
     const cleanedClassGroups = gradebook.map(g => g.class_group) 
-                                      .filter(Boolean)        
-                                      .map(c => c.trim());    
+                                      .filter(Boolean)       
+                                      .map(c => c.trim());   
     const uniqueClassGroups = [...new Set(cleanedClassGroups)];
     return uniqueClassGroups.sort((a, b) => a.localeCompare(b, 'sq'));
   }, [gradebook]);
@@ -1309,7 +1308,7 @@ export default function Dashboard() {
                         setGbForm({ // Reset form fields to default
                             subject: '', 
                             student_name: '', 
-                            class_group: '',        
+                            class_group: '',       
                             student_id_number: '',  
                             email_contact: '',      
                             period_1: '', 
@@ -1642,70 +1641,134 @@ export default function Dashboard() {
                           })()}
                         </div>
 
-                        {/* Tabela */}
-                        <div className="overflow-x-auto">
-                          <table className="w-full">
-                            <thead>
-                              <tr className="border-b border-slate-50">
-                                {/* Japim një gjerësi minimale për kolona kyçe në ekranet e vogla */}
-                                <th className="text-left px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Studenti</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.1</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.2</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.3</th>
-                                <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mes.</th>
-                                <th className="text-right px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[100px]">Veprime</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {students.map((student, idx) => (
-                                <motion.tr key={student.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.04 }} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors group">
-                                  <td className="px-6 py-4">
-                                    <div className="flex items-center gap-3">
-                                      <div className="w-8 h-8 bg-blue-50 rounded-xl flex items-center justify-center shrink-0"><span className="text-[10px] font-black text-blue-500">{student.student_name.charAt(0).toUpperCase()}</span></div>
-                                      <div> {/* <-- KY <div> I RI MBESHTJELL EMERIN DHE TE DHENAT E REJA */}
-                                        <span className="font-bold text-sm text-slate-700">{student.student_name}</span>
-                                        {/* NEW: Shfaq Klasën/Grupin dhe ID-në */}
-                                        {(student.class_group || student.student_id_number) && (
-                                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
+                        {/* Tabela & Kartat Responsive */}
+                        <div className="w-full">
+                          
+                          {/* ── VERSIONI DESKTOP (Tabelë Klasike) ── */}
+                          <div className="hidden md:block overflow-x-auto">
+                            <table className="w-full">
+                              <thead>
+                                <tr className="border-b border-slate-50">
+                                  <th className="text-left px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">Studenti</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.1</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.2</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">P.3</th>
+                                  <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Mes.</th>
+                                  <th className="text-right px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[100px]">Veprime</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {students.map((student, idx) => (
+                                  <motion.tr key={student.id} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: idx * 0.04 }} className="border-b border-slate-50 last:border-0 hover:bg-slate-50/50 transition-colors group">
+                                    <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                        <div className="w-8 h-8 bg-blue-50 rounded-xl flex items-center justify-center shrink-0"><span className="text-[10px] font-black text-blue-500">{student.student_name.charAt(0).toUpperCase()}</span></div>
+                                        <div>
+                                          <span className="font-bold text-sm text-slate-700">{student.student_name}</span>
+                                          {(student.class_group || student.student_id_number) && (
+                                              <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">
                                                 {student.class_group} {student.student_id_number && `(${student.student_id_number})`}
-                                            </span>
-                                        )}
+                                              </span>
+                                          )}
+                                        </div>
                                       </div>
-                                    </div>
-                                  </td>
+                                    </td>
+                                    <td className="px-4 py-4 text-center"><GradeBadge value={student.period_1} scale={student.scale} /></td>
+                                    <td className="px-4 py-4 text-center"><GradeBadge value={student.period_2} scale={student.scale} /></td>
+                                    <td className="px-4 py-4 text-center"><GradeBadge value={student.period_3} scale={student.scale} /></td>
+                                    <td className="px-4 py-4 text-center">
+                                      {student.average !== null ? (
+                                        <span className="inline-flex items-center justify-center w-12 h-8 rounded-xl text-sm font-black bg-slate-900 text-white">{student.average}</span>
+                                      ) : <span className="text-[10px] font-black text-slate-300 italic">—</span>}
+                                    </td>
+                                    <td className="px-6 py-4">
+                                      {/* Në Desktop e lëmë opacity-0 që të shfaqet vetëm në hover */}
+                                      <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <button onClick={() => handleGbEdit(student)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><Pencil size={14} /></button>
+                                        <button onClick={() => handleGbDelete(student.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={14} /></button>
+                                        <div className="relative">
+                                          <button 
+                                            onClick={() => {
+                                              setActiveTab('gradebook');
+                                              setGradebookSubTab('absences');
+                                              setAbsencesFilter(student.student_name);
+                                            }} 
+                                            className="p-2 text-orange-500 hover:bg-orange-50 rounded-xl transition-all flex items-center"
+                                          >
+                                            <Calendar size={14} />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </td>
+                                  </motion.tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
 
-                                  <td className="px-4 py-4 text-center"><GradeBadge value={student.period_1} scale={student.scale} /></td>
-                                  <td className="px-4 py-4 text-center"><GradeBadge value={student.period_2} scale={student.scale} /></td>
-                                  <td className="px-4 py-4 text-center"><GradeBadge value={student.period_3} scale={student.scale} /></td>
+                          {/* ── VERSIONI MOBILE (Karta pa scroll horizontal) ── */}
+                          <div className="block md:hidden">
+                            {students.map((student, idx) => (
+                              <motion.div key={`mobile-${student.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="border-b border-slate-100 p-5 last:border-0 bg-white">
+                                
+                                {/* Koka e Kartës: Avatar dhe Emri */}
+                                <div className="flex items-center gap-3 mb-4">
+                                  <div className="w-10 h-10 bg-blue-50 rounded-2xl flex items-center justify-center shrink-0 shadow-sm">
+                                    <span className="text-xs font-black text-blue-500">{student.student_name.charAt(0).toUpperCase()}</span>
+                                  </div>
+                                  <div>
+                                    <span className="font-black text-[15px] text-slate-800 block leading-tight">{student.student_name}</span>
+                                    {(student.class_group || student.student_id_number) && (
+                                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 block">
+                                        {student.class_group} {student.student_id_number && `(${student.student_id_number})`}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
 
-                                  <td className="px-4 py-4 text-center">
+                                {/* Trupi i Kartës: Notat */}
+                                <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100/50">
+                                  <div className="text-center flex flex-col items-center justify-center">
+                                    <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">P.1</span>
+                                    <GradeBadge value={student.period_1} scale={student.scale} />
+                                  </div>
+                                  <div className="text-center flex flex-col items-center justify-center">
+                                    <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">P.2</span>
+                                    <GradeBadge value={student.period_2} scale={student.scale} />
+                                  </div>
+                                  <div className="text-center flex flex-col items-center justify-center">
+                                    <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">P.3</span>
+                                    <GradeBadge value={student.period_3} scale={student.scale} />
+                                  </div>
+                                  <div className="text-center flex flex-col items-center justify-center border-l border-slate-200">
+                                    <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">Mes</span>
                                     {student.average !== null ? (
-                                      <span className="inline-flex items-center justify-center w-12 h-8 rounded-xl text-sm font-black bg-slate-900 text-white">{student.average}</span>
-                                    ) : <span className="text-[10px] font-black text-slate-300 italic">—</span>}
-                                  </td>
-                                  <td className="px-6 py-4">
-                                    <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                      <button onClick={() => handleGbEdit(student)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><Pencil size={14} /></button>
-                                      <button onClick={() => handleGbDelete(student.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={14} /></button>
-                                      <div className="relative">
-                                        <button 
-                                          onClick={() => {
-                                            setActiveTab('gradebook');
-                                            setGradebookSubTab('absences');
-                                            setAbsencesFilter(student.student_name);
-                                          }} 
-                                          className="p-2 text-orange-500 hover:bg-orange-50 rounded-xl transition-all flex items-center"
-                                        >
-                                          <Calendar size={14} />
-                                          <ChevronDown size={10} className="ml-1" />
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </motion.tr>
-                              ))}
-                            </tbody>
-                          </table>
+                                      <span className="inline-flex items-center justify-center w-full h-8 rounded-xl text-xs font-black bg-slate-900 text-white shadow-md">{student.average}</span>
+                                    ) : <span className="inline-flex items-center justify-center h-8 text-[10px] font-black text-slate-300 italic">—</span>}
+                                  </div>
+                                </div>
+
+                                {/* Fundi i Kartës: Veprimet (Butonat Gjithmonë të Dukshëm) */}
+                                <div className="flex items-center justify-between gap-2 pt-1">
+                                  <button
+                                    onClick={() => {
+                                      setActiveTab('gradebook');
+                                      setGradebookSubTab('absences');
+                                      setAbsencesFilter(student.student_name);
+                                    }}
+                                    className="flex-1 py-2.5 bg-orange-50 text-orange-600 rounded-xl text-[10px] font-black uppercase tracking-widest flex items-center justify-center gap-1.5 active:scale-95 transition-all"
+                                  >
+                                    <Calendar size={14} /> Mungesat
+                                  </button>
+                                  <div className="flex gap-2">
+                                    <button onClick={() => handleGbEdit(student)} className="p-2.5 bg-blue-50 text-blue-600 rounded-xl active:scale-95 transition-all"><Pencil size={14} /></button>
+                                    <button onClick={() => handleGbDelete(student.id)} className="p-2.5 bg-red-50 text-red-500 rounded-xl active:scale-95 transition-all"><Trash2 size={14} /></button>
+                                  </div>
+                                </div>
+
+                              </motion.div>
+                            ))}
+                          </div>
                         </div>
                       </motion.div>
                     ))}
@@ -1813,49 +1876,48 @@ export default function Dashboard() {
               </motion.div>
             )}
 
-{/* ── TIMER & STOPWATCH ───────────────────────────────────────────────── */}
+            {/* ── TIMER & STOPWATCH ───────────────────────────────────────────────── */}
             {activeTab === 'timer_soon' && (
-              <motion.div key="timer" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="h-full flex items-center justify-center py-10">
-                <div className="bg-white p-10 md:p-14 rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-2xl relative overflow-hidden">
+              <motion.div key="timer" initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex-1 flex items-center justify-center p-2 md:p-6 h-full">
+                <div className="bg-white p-6 md:p-14 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-2xl relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-500"></div>
                   
                   {/* Header */}
-                  <div className="text-center mb-10">
-                    <div className="w-16 h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-6 text-blue-600 shadow-inner">
-                      <Timer size={32} />
+                  <div className="text-center mb-6 md:mb-10">
+                    <div className="w-12 h-12 md:w-16 md:h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 md:mb-6 text-blue-600 shadow-inner">
+                      <Timer size={28} />
                     </div>
-                    <h2 className="text-2xl font-black text-slate-800 tracking-tight">Menaxhimi i Kohës</h2>
-                    <p className="text-slate-400 font-medium text-sm mt-1">Përdore për teste, kuize ose detyra praktike.</p>
+                    <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Menaxhimi i Kohës</h2>
                   </div>
 
-                  {/* Zgjedhja e Mode (Timer / Stopwatch) */}
-                  <div className="flex bg-slate-50 p-1.5 rounded-2xl mb-10">
+                  {/* Zgjedhja e Mode */}
+                  <div className="flex bg-slate-50 p-1 md:p-1.5 rounded-xl md:rounded-2xl mb-6 md:mb-10">
                     <button 
                       onClick={() => { setTimerMode('timer'); setIsTimerActive(false); }}
-                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${timerMode === 'timer' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`flex-1 py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all ${timerMode === 'timer' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                       ⏳ Numërim Mbrapsht
                     </button>
                     <button 
                       onClick={() => { setTimerMode('stopwatch'); setIsTimerActive(false); }}
-                      className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all ${timerMode === 'stopwatch' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                      className={`flex-1 py-2 md:py-3 rounded-lg md:rounded-xl font-bold text-xs md:text-sm transition-all ${timerMode === 'stopwatch' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >
                       ⏱️ Kronometër
                     </button>
                   </div>
 
-                  {/* Ekrani i Kohës */}
-                  <div className="text-center mb-10">
-                    <div className={`text-8xl md:text-9xl font-black tracking-tighter ${time <= 60 && timerMode === 'timer' && time > 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
+                  {/* Ekrani i Kohës - (Këtu u zvogëlua teksti për mobile: text-6xl) */}
+                  <div className="text-center mb-6 md:mb-10">
+                    <div className={`text-6xl md:text-9xl font-black tracking-tighter ${time <= 60 && timerMode === 'timer' && time > 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
                       {formatTime(time)}
                     </div>
                   </div>
 
-{/* Input për të vendosur minutat (Vetëm për Timer) */}
+                  {/* Inputi i Minutave */}
                   {timerMode === 'timer' && (
-                    <div className="flex justify-center mb-10">
-                      <div className="flex items-center gap-3 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100">
-                        <span className="text-xs font-bold text-slate-400 uppercase tracking-widest">Minuta:</span>
+                    <div className="flex justify-center mb-6 md:mb-10">
+                      <div className="flex items-center gap-2 md:gap-3 bg-slate-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl border border-slate-100">
+                        <span className="text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest">Minuta:</span>
                         <input 
                           type="number" 
                           min="1"
@@ -1866,27 +1928,27 @@ export default function Dashboard() {
                             if (!isTimerActive) setTime((val || 0) * 60);
                           }}
                           disabled={isTimerActive}
-                          className="w-20 bg-transparent text-center font-black text-xl text-slate-700 outline-none"
+                          className="w-12 md:w-20 bg-transparent text-center font-black text-lg md:text-xl text-slate-700 outline-none"
                         />
                       </div>
                     </div>
                   )}
 
                   {/* Butonat e Kontrollit */}
-                  <div className="flex justify-center gap-4">
+                  <div className="flex flex-col sm:flex-row justify-center gap-3 md:gap-4">
                     <button 
                       onClick={toggleTimer}
-                      className={`flex items-center gap-2 px-8 py-4 rounded-2xl font-black text-white shadow-lg transition-all hover:scale-105 active:scale-95 ${isTimerActive ? 'bg-amber-500 shadow-amber-200 hover:bg-amber-600' : 'bg-blue-600 shadow-blue-200 hover:bg-blue-700'}`}
+                      className={`flex items-center justify-center gap-2 px-6 py-3 md:px-8 md:py-4 rounded-xl md:rounded-2xl font-black text-white shadow-lg transition-all active:scale-95 ${isTimerActive ? 'bg-amber-500 shadow-amber-200' : 'bg-blue-600 shadow-blue-200'}`}
                     >
-                      {isTimerActive ? <Pause size={20} /> : <Play size={20} />}
+                      {isTimerActive ? <Pause size={18} /> : <Play size={18} />}
                       {isTimerActive ? 'Pauzë' : 'Fillo Kohën'}
                     </button>
 
                     <button 
                       onClick={resetTimer}
-                      className="flex items-center gap-2 px-6 py-4 rounded-2xl font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 hover:text-slate-700 transition-all active:scale-95 border border-slate-100"
+                      className="flex items-center justify-center gap-2 px-4 py-3 md:px-6 md:py-4 rounded-xl md:rounded-2xl font-bold text-slate-500 bg-slate-50 hover:bg-slate-100 transition-all active:scale-95 border border-slate-100"
                     >
-                      <RotateCcw size={20} /> Reset
+                      <RotateCcw size={18} /> Reset
                     </button>
                   </div>
                   
