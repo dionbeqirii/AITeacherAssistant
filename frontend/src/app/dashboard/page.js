@@ -15,6 +15,7 @@ import {
 import dynamic from 'next/dynamic';
 import { useRouter } from 'next/navigation';
 import { supabase } from '../../lib/supabaseClient';
+import { notify } from '../../lib/notifications';
 
 const AnalyticsChart = dynamic(() => import('../../components/AnalyticsChart'), { 
   ssr: false,
@@ -71,9 +72,10 @@ export default function Dashboard() {
     aiAccuracy: 0, 
     thisWeek: 0, 
     statsLoading: true,
-    chartData: [] // NEW: Shtojmë të dhënat e grafikut këtu
+    chartData: []
   });
   const [conversations, setConversations] = useState([]);
+  const [isAvatarMenuOpen, setIsAvatarMenuOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const router = useRouter();
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -92,6 +94,69 @@ export default function Dashboard() {
   const [feedbackStatus, setFeedbackStatus] = useState({ type: 'idle', text: '' });
   const feedbackRef = useRef(null);
 
+  // ─── STATE NOTIFICATIONS ──────────────────────────────────────────────
+  const [notifications, setNotifications] = useState([]);
+  const [isNotifOpen, setIsNotifOpen] = useState(false);
+  const notifRef = useRef(null);
+
+  const unreadCount = notifications.filter(n => !n.is_read).length;
+
+  const fetchNotifications = useCallback(async (userId) => {
+    const { data, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (data) setNotifications(data);
+  }, []);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const channel = supabase
+      .channel('schema-db-changes')
+      .on(
+        'postgres_changes',
+        { 
+          event: 'INSERT', 
+          schema: 'public', 
+          table: 'notifications' 
+        },
+        (payload) => {
+          if (payload.new && payload.new.user_id === user.id) {
+            setNotifications((prev) => [payload.new, ...prev]);
+          }
+        }
+      )
+      .subscribe((status, err) => {
+        if (err) console.error("❌ Gabim në lidhjen Realtime:", err);
+      });
+
+    return () => { 
+      supabase.removeChannel(channel); 
+    };
+  }, [user]);
+
+  const closeNotificationsAndMarkRead = async () => {
+    setIsNotifOpen(false);
+    const unreadIds = notifications.filter(n => !n.is_read).map(n => n.id);
+    if (unreadIds.length > 0) {
+      setNotifications(prev => prev.map(n => ({ ...n, is_read: true })));
+      await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
+    }
+  };
+
+  const toggleNotifications = () => {
+    if (isNotifOpen) closeNotificationsAndMarkRead();
+    else setIsNotifOpen(true);
+  };
+
+  const deleteNotification = async (id) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+    await supabase.from('notifications').delete().eq('id', id);
+  };
+  // ──────────────────────────────────────────────────────────────────────────
+
   // ─── STATE AI EXAMS ───────────────────────────────────────────────────────
   const [examFormData, setExamFormData] = useState({ professorName: '', subject: '', topic: '', level: 'Fakultet', numQuestions: 5, type: 'multiple-choice', difficulty: 'Medium', extraInfo: '' });
   const [examQuestions, setExamQuestions] = useState([]);
@@ -105,36 +170,35 @@ export default function Dashboard() {
   const [homeworkFieldErrors, setHomeworkFieldErrors] = useState({});
   const [homeworkApiError, setHomeworkApiError] = useState(null);
 
-    // STATE GRADEBOOK & ABSENCES ───────────────────────────────────────────
+  // STATE GRADEBOOK & ABSENCES ───────────────────────────────────────────
   const [gradebook, setGradebook] = useState([]);
   const [gradebookLoading, setGradebookLoading] = useState(false);
   const [gradebookError, setGradebookError] = useState(null);
   const [gbScale, setGbScale] = useState('1-5');
   const [gbFilterSubject, setGbFilterSubject] = useState('all');
-  const [gbFilterClass, setGbFilterClass] = useState('all'); // NEW: State for Class/Group filter
+  const [gbFilterClass, setGbFilterClass] = useState('all'); 
   const [gbSearchQuery, setGbSearchQuery] = useState('');
   const [gbShowForm, setGbShowForm] = useState(false);
   const [gbEditingId, setGbEditingId] = useState(null);
   const [gbForm, setGbForm] = useState({ 
     subject: '', 
     student_name: '', 
-    class_group: '',       // NEW: Class/Group
-    student_id_number: '', // NEW: Student ID Number
-    email_contact: '',     // NEW: Email/Contact
+    class_group: '',       
+    student_id_number: '', 
+    email_contact: '',     
     period_1: '', 
     period_2: '', 
     period_3: '',
-    notes: '',             // NEW: Notes
-    scale: '5-10'          // NEW: Shkalla e Notave
+    notes: '',             
+    scale: '5-10'          
   });
 
   const [gbFormErrors, setGbFormErrors] = useState({});
   const [gbSaving, setGbSaving] = useState(false);
-  const [gbAddMode, setGbAddMode] = useState('new'); // 'new' ose 'existing'
-  const [gbSelectedExistingStudent, setGbSelectedExistingStudent] = useState(null); // Ruaj studentin e zgjedhur
+  const [gbAddMode, setGbAddMode] = useState('new'); 
+  const [gbSelectedExistingStudent, setGbSelectedExistingStudent] = useState(null); 
 
   // STATE I SHTUAR PËR MUNGESAT
-
   const [gradebookSubTab, setGradebookSubTab] = useState('grades');
   const [absencesFilter, setAbsencesFilter] = useState(null);
   const [absences, setAbsences] = useState([]);
@@ -159,10 +223,23 @@ export default function Dashboard() {
       if (isProfileOpen && profileRef.current && !profileRef.current.contains(event.target)) setIsProfileOpen(false);
       if (isFeedbackOpen && feedbackRef.current && !feedbackRef.current.contains(event.target)) setIsFeedbackOpen(false);
       if (showAbsenceDropdown && absenceDropdownRef.current && !absenceDropdownRef.current.contains(event.target)) setShowAbsenceDropdown(false);
+      
+      if (isNotifOpen && notifRef.current && !notifRef.current.contains(event.target)) {
+        setIsNotifOpen(false);
+        setNotifications(prev => {
+          const unreads = prev.filter(n => !n.is_read);
+          if(unreads.length > 0) {
+              const ids = unreads.map(n=>n.id);
+              supabase.from('notifications').update({is_read: true}).in('id', ids).then();
+              return prev.map(n => ({...n, is_read: true}));
+          }
+          return prev;
+        });
+      }
     };
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, [activeTab, isProfileOpen, isFeedbackOpen, result, loading, showAbsenceDropdown]);
+  }, [activeTab, isProfileOpen, isFeedbackOpen, result, loading, showAbsenceDropdown, isNotifOpen]);
 
   const fetchHistory = async (userId) => {
     const { data } = await supabase.from('conversations').select('*').eq('user_id', userId).order('created_at', { ascending: false });
@@ -171,8 +248,6 @@ export default function Dashboard() {
 
   const fetchStats = async (userId) => {
     try {
-      // 1. Merr Statistikat e Aktivitetit të AI-së (nga Conversations)
-      // Kjo pjesë mbetet për `totalEvaluations`, `thisWeek`, `aiAccuracy`
       const { data: convData, count: totalEvaluationsCount, error: convError } = await supabase
         .from('conversations')
         .select('id, created_at', { count: 'exact' })
@@ -213,8 +288,6 @@ export default function Dashboard() {
         }
       }
 
-      // 2. Merr Statistikat e Notave (nga Gradebook)
-      // Kjo pjesë do të llogarisë `classAverage` dhe `chartData`
       const { data: gradebookEntries, error: gbError } = await supabase
         .from('gradebook')
         .select('subject, average')
@@ -223,16 +296,14 @@ export default function Dashboard() {
       if (gbError) console.error("Error fetching gradebook:", gbError);
 
       let classAverage = 0;
-      const subjectAverages = {}; // Do te mbaje mesataret per cdo lende
+      const subjectAverages = {};
 
       if (gradebookEntries && gradebookEntries.length > 0) {
-        // Llogarit mesataren e pergjithshme te klases
         const allAverages = gradebookEntries.map(entry => entry.average).filter(avg => avg !== null);
         if (allAverages.length > 0) {
           classAverage = parseFloat((allAverages.reduce((sum, avg) => sum + avg, 0) / allAverages.length).toFixed(1));
         }
 
-        // Llogarit mesataret per cdo lende per grafiku
         const gradesBySubject = {};
         gradebookEntries.forEach(entry => {
           if (entry.subject && entry.average !== null) {
@@ -251,28 +322,26 @@ export default function Dashboard() {
         }
       }
 
-      // Formatimi i të dhënave të grafikut për lëndët (mesatarja)
       const chartDataForSubjects = Object.entries(subjectAverages).map(([subject, average]) => ({
         name: subject,
-        score: average, // 'score' këtu përfaqëson mesataren e lëndës
+        score: average, 
       }));
 
       setStats({
         totalEvaluations,
-        classAverage, // Tani vjen nga gradebook
+        classAverage,
         aiAccuracy: aiAccuracy, 
         thisWeek,
         statsLoading: false,
-        chartData: chartDataForSubjects, // Tani chartData përmban mesataret e lëndëve nga gradebook
+        chartData: chartDataForSubjects,
       });
     } catch (err) {
-      console.error("Gabim gjatë marrjes së statistikave të dashboard-it:", err);
+      console.error("Gabim gjatë marrjes së statistikave:", err);
       setStats(prev => ({ ...prev, statsLoading: false }));
     }
   };
 
-
-// ─── STATE PËR TIMER & STOPWATCH ──────────────────────────────────────────
+  // ─── STATE PËR TIMER & STOPWATCH ──────────────────────────────────────────
   const [timerMode, setTimerMode] = useState('timer'); 
   const [time, setTime] = useState(15 * 60); 
   const [isTimerActive, setIsTimerActive] = useState(false);
@@ -281,7 +350,6 @@ export default function Dashboard() {
   const [isTimeUp, setIsTimeUp] = useState(false);
   const audioRef = useRef(null);
 
-  // Inicializojmë zilen vetëm në Client-Side
   useEffect(() => {
     audioRef.current = new Audio('https://assets.mixkit.co/active_storage/sfx/2869/2869-preview.mp3');
     audioRef.current.loop = true; 
@@ -295,13 +363,10 @@ export default function Dashboard() {
           if (timerMode === 'timer') {
             if (prevTime <= 1) {
               setIsTimerActive(false);
-              
-              // HAPIM MODALIN E ZILES DHE LUAJMË MUZIKËN
               setIsTimeUp(true);
               if (audioRef.current) {
                 audioRef.current.play().catch(e => console.error("Gabim me zilen:", e));
               }
-              
               return 0;
             }
             return prevTime - 1;
@@ -316,14 +381,12 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [isTimerActive, timerMode]);
 
-  // Përditëso kohën automatikisht kur ndërron mode ose vendos minuta të reja
   useEffect(() => {
     if (!isTimerActive) {
       setTime(timerMode === 'timer' ? (inputMinutes || 0) * 60 : 0);
     }
   }, [timerMode, inputMinutes, isTimerActive]);
 
-  // Funksioni që mbyll zilen dhe rikthen kohën
   const dismissTimeUp = () => {
     setIsTimeUp(false);
     if (audioRef.current) {
@@ -335,7 +398,6 @@ export default function Dashboard() {
 
   const toggleTimer = () => setIsTimerActive(!isTimerActive);
   
-  // VETËM NJË resetTimer KËTU
   const resetTimer = () => {
     setIsTimerActive(false);
     dismissTimeUp(); 
@@ -347,17 +409,32 @@ export default function Dashboard() {
     const s = (totalSeconds % 60).toString().padStart(2, '0');
     return h > 0 ? `${h}:${m}:${s}` : `${m}:${s}`;
   };
-  // ──────────────────────────────────────────────────────────────────────────
 
   useEffect(() => {
     const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { router.push('/login'); }
-      else { setUser(user); setProfileForm(prev => ({ ...prev, fullName: user.user_metadata?.full_name || user.email.split('@')[0], avatarPreview: user.user_metadata?.avatar_url || null })); await fetchStats(user.id); fetchHistory(user.id); }
+      const { data: { session } } = await supabase.auth.getSession();
+      
+      if (!session) { 
+        router.push('/login'); 
+      } else { 
+        const currentUser = session.user;
+        setUser(currentUser); 
+        
+        setProfileForm(prev => ({ 
+          ...prev, 
+          fullName: currentUser.user_metadata?.full_name || currentUser.email.split('@')[0], 
+          avatarPreview: currentUser.user_metadata?.avatar_url || null 
+        })); 
+        
+        await fetchStats(currentUser.id); 
+        fetchHistory(currentUser.id); 
+        fetchNotifications(currentUser.id);
+      }
       setAuthLoading(false);
     };
+    
     checkUser();
-  }, [router]);
+  }, [router, fetchNotifications]);
 
   useEffect(() => {
     let interval;
@@ -388,14 +465,13 @@ export default function Dashboard() {
     } catch (err) { setFeedbackStatus({ type: 'error', text: err.message }); }
   };
 
-  // ─── GRADEBOOK HANDLERS ───────────────────────────────────────────────────
   const fetchGradebook = useCallback(async (subject = 'all') => {
     setGradebookLoading(true); 
     setGradebookError(null);
     try {
       const { data: { session }, error: sessionError } = await supabase.auth.getSession();
       if (sessionError || !session) {
-        setGradebookError("Sesioni ka skaduar. Po ju ridrejtojmë...");
+        setGradebookError("Sesioni ka skaduar.");
         setTimeout(() => router.push('/login'), 2000);
         return;
       }
@@ -424,14 +500,12 @@ export default function Dashboard() {
         setGradebookError(data.error || "Gabim gjatë ngarkimit.");
       }
     } catch (err) { 
-      console.error('Fetch gradebook error:', err);
       setGradebookError("Gabim lidhje. Provoni përsëri.");
     } finally { 
       setGradebookLoading(false); 
     }
   }, [router]);
 
-  // FUNKSIONI I SHTUAR PËR FETCH ABSENCES
   const fetchAbsences = useCallback(async () => {
     setAbsencesLoading(true);
     setAbsencesError(null);
@@ -454,31 +528,24 @@ export default function Dashboard() {
       }
     } catch (err) {
       console.error('Fetch absences error:', err);
-      // setAbsencesError("Gabim lidhje. Provoni përsëri."); // Silent fail për t'u mos ndërprerë demo
     } finally {
       setAbsencesLoading(false);
     }
   }, [router]);
 
-    // Gjej këtë pjesë rreth rreshtit 218:
-    useEffect(() => {
-      if (activeTab === 'gradebook') fetchGradebook('all'); // Gjithmonë merr të gjitha fillimisht
-    }, [activeTab, fetchGradebook]); 
-    // Hoqëm gbFilterSubject nga dependency që të mos bëjë re-fetch dhe të fshijë lëndët e tjera
+  useEffect(() => {
+    if (activeTab === 'gradebook') fetchGradebook('all'); 
+  }, [activeTab, fetchGradebook]); 
 
-
-  // USE EFFECT I SHTUAR PËR MUNGESAT
   useEffect(() => {
     if (activeTab === 'gradebook' && gradebookSubTab === 'absences') {
       fetchAbsences();
     }
   }, [activeTab, gradebookSubTab, fetchAbsences]);
 
-  // FUNKSIONI PËR TË REGJISTRUAR NJË MUNGESË TË RE
   const handleRecordAbsence = async (reason) => {
     setShowAbsenceDropdown(false);
     
-    // Optimistic UI Update (Përditëso UI direkt që përdoruesi ta shohë ndryshimin)
     const newAbsence = {
       id: Date.now(),
       student_name: absencesFilter,
@@ -505,13 +572,11 @@ export default function Dashboard() {
     }
   };
 
-  // NEW: Lista unike e lëndëve për filter
   const gbSubjects = useMemo(() => {
     const s = [...new Set(gradebook.map(g => g.subject))].sort((a, b) => a.localeCompare(b, 'sq'));
     return s;
   }, [gradebook]);
 
-  // NEW: Lista unike e klasave/grupeve për filter
   const gbClasses = useMemo(() => {
     const cleanedClassGroups = gradebook.map(g => g.class_group) 
                                       .filter(Boolean)       
@@ -520,33 +585,27 @@ export default function Dashboard() {
     return uniqueClassGroups.sort((a, b) => a.localeCompare(b, 'sq'));
   }, [gradebook]);
 
-  // NEW: Lista e studentëve unikë për zgjedhje në formularin "Shto lëndë"
   const gbUniqueStudents = useMemo(() => {
     const studentsMap = new Map();
     gradebook.forEach(s => {
-      // Krijojmë një ID unike bazuar në emër + klasë (ose student_id_number nëse disponohet)
       const studentIdentifier = s.student_id_number && s.student_id_number !== '' 
                                 ? s.student_id_number 
                                 : `${s.student_name}-${s.class_group}`;
       
-      // Vetëm nëse nuk e kemi shtuar këtë student më parë, e shtojmë
       if (!studentsMap.has(studentIdentifier)) {
         studentsMap.set(studentIdentifier, {
-          id: studentIdentifier, // ID e brendshme, jo ajo e rreshtit te Supabase. Kjo ID na duhet per key te React.
+          id: studentIdentifier, 
           student_name: s.student_name,
           class_group: s.class_group,
           student_id_number: s.student_id_number,
           email_contact: s.email_contact,
           notes: s.notes,
-          // Nuk përfshijmë subject, period_x, average, scale pasi këto janë specifike për lëndën
         });
       }
     });
     return Array.from(studentsMap.values()).sort((a, b) => a.student_name.localeCompare(b.student_name, 'sq'));
   }, [gradebook]);
 
-
-  // Filtrim + kërkim + RENDITJE ALFABETIKE
   const gbFiltered = useMemo(() => {
     return gradebook.filter(g => {
       const matchSubject = gbFilterSubject === 'all' || g.subject === gbFilterSubject;
@@ -561,8 +620,6 @@ export default function Dashboard() {
     }).sort((a, b) => a.student_name.localeCompare(b.student_name, 'sq')); 
   }, [gradebook, gbFilterSubject, gbFilterClass, gbSearchQuery]); 
 
-
-  // Grupim sipas lëndes
   const gbGrouped = useMemo(() => {
     const groups = {};
     gbFiltered.forEach(g => {
@@ -572,30 +629,26 @@ export default function Dashboard() {
     return groups;
   }, [gbFiltered]);
 
-
   const validateGbForm = () => {
     const errors = {};
     if (!gbForm.subject.trim()) errors.subject = "Lënda është e detyrueshme.";
     
-    // Validimi i detajeve të studentit varet nga modaliteti
-    if (gbEditingId) { // Në modalitetin e editimit, validimi i rregullt
+    if (gbEditingId) { 
         if (!gbForm.student_name.trim()) errors.student_name = "Emri i studentit është i detyrueshëm.";
         if (!gbForm.class_group.trim()) errors.class_group = "Klasa/Grupi është e detyrueshme.";
-    } else if (gbAddMode === 'new') { // Shtim i studentit të ri
+    } else if (gbAddMode === 'new') { 
         if (!gbForm.student_name.trim()) errors.student_name = "Emri i studentit është i detyrueshëm.";
         if (!gbForm.class_group.trim()) errors.class_group = "Klasa/Grupi është e detyrueshme.";
-    } else if (gbAddMode === 'existing') { // Shtim lënde për student ekzistues
+    } else if (gbAddMode === 'existing') { 
         if (!gbSelectedExistingStudent) errors.student_name = "Ju lutem zgjidhni një student ekzistues.";
-        // Të dhënat e studentit do të jenë pre-mbushur, kështu që nuk i validojmë këtu
     }
 
     const max = gbForm.scale === '1-5' ? 5 : 10;
-    const min = gbForm.scale === '5-10' ? 5 : 1; // Shto këtë rresht
+    const min = gbForm.scale === '5-10' ? 5 : 1; 
     ['period_1', 'period_2', 'period_3'].forEach((p) => {
       const val = gbForm[p];
       if (val !== '' && val !== null) {
         const num = parseFloat(val);
-        // Ndrysho kushtin këtu:
         if (isNaN(num) || num < min || num > max) {
           errors[p] = `Nota duhet të jetë ${min}-${max}.`;
         }
@@ -605,62 +658,57 @@ export default function Dashboard() {
     return Object.keys(errors).length === 0;
   };
 
-
-
-
   const handleGbSave = async () => {
     if (!validateGbForm()) return;
     setGbSaving(true);
     try {
-      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
-      const payload = { ...gbForm }; // KORRIGJIM: Perdoret gjithe gbForm direkt, qe permban gbForm.scale
+      const { data: { session } } = await supabase.auth.getSession();
+      const payload = { ...gbForm }; 
       const method = gbEditingId ? 'PUT' : 'POST';
       if (gbEditingId) payload.id = gbEditingId;
       const res = await fetch('/api/v1/gradebook', { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
       const data = await res.json();
+      
       if (data.success) {
+        if (gbEditingId) {
+          await notify(user.id, "Përditësim Note", `Të dhënat dhe notat për studentin ${gbForm.student_name} u përditësuan.`, 'success');
+        } else {
+          await notify(user.id, "Student i Ri", `Studenti ${gbForm.student_name} u regjistrua me sukses në regjistër.`, 'success');
+        }
+
         setGbShowForm(false); setGbEditingId(null);
-        // Pastro formen, por tashme duke perdorur vlerat default te gbForm
         setGbForm({ 
-            subject: '', 
-            student_name: '', 
-            class_group: '',       
-            student_id_number: '', 
-            email_contact: '',     
-            period_1: '', 
-            period_2: '', 
-            period_3: '',
-            notes: '',             
-            scale: '5-10'         // Ktheje ne shkallen default
+            subject: '', student_name: '', class_group: '', student_id_number: '', email_contact: '', 
+            period_1: '', period_2: '', period_3: '', notes: '', scale: '5-10'  
         });
         setGbFormErrors({});
         fetchGradebook(gbFilterSubject);
-      } else { setGbFormErrors({ general: data.error || "Gabim gjatë ruajtjes." }); }
+      } else { 
+        setGbFormErrors({ general: data.error || "Gabim gjatë ruajtjes." }); 
+      }
     } catch { setGbFormErrors({ general: "Gabim lidhje. Provoni përsëri." }); }
     finally { setGbSaving(false); }
   };
 
   const handleGbEdit = (student) => {
-    setGbAddMode('new'); // Kur editohet nje rresht specifik, e trajtojme si edit te nje "rekordi" te ri
-    setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen e studentit ekzistues
+    setGbAddMode('new'); 
+    setGbSelectedExistingStudent(null); 
     setGbForm({ 
       subject: student.subject, 
       student_name: student.student_name, 
-      class_group: student.class_group || '',       
+      class_group: student.class_group || '',        
       student_id_number: student.student_id_number || '', 
-      email_contact: student.email_contact || '',     
+      email_contact: student.email_contact || '',      
       period_1: student.period_1 ?? '', 
       period_2: student.period_2 ?? '', 
       period_3: student.period_3 ?? '',
-      notes: student.notes || '',                    
+      notes: student.notes || '',                  
       scale: student.scale || '5-10'                 
     });
     setGbEditingId(student.id);
     setGbShowForm(true);
     setGbFormErrors({});
   };
-
-
 
   const handleGbDelete = async (id) => {
     if (!confirm("A jeni i sigurt që doni ta fshini këtë student?")) return;
@@ -686,14 +734,10 @@ export default function Dashboard() {
       scale: '5-10'          
     }); 
     setGbFormErrors({}); 
-    setGbAddMode('new'); // Kthejme modalitetin ne 'new'
-    setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen e studentit ekzistues
+    setGbAddMode('new'); 
+    setGbSelectedExistingStudent(null); 
   };
 
-
-
-
-  // ─── EXPORT GRADEBOOK PDF ─────────────────────────────────────────────────
   const handleGbExportPDF = () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
@@ -702,9 +746,6 @@ export default function Dashboard() {
     doc.setFont("helvetica", "bold"); doc.setFontSize(18); doc.setTextColor(30, 58, 138);
     doc.text("REGJISTRI I NOTAVE", pageWidth / 2, y, { align: 'center' }); y += 8;
     doc.setFontSize(10); doc.setTextColor(100); doc.setFont("helvetica", "normal");
-        // Kjo linjë nuk ka më kuptim sepse shkalla është per student, mund ta heqim ose ta modifikojmë
-    // doc.text(`Shkalla: ${gbScale}  |  Data: ${new Date().toLocaleDateString('sq-AL')}`, pageWidth / 2, y, { align: 'center' }); y += 10;
-    // Ose mund të shfaqim vetëm datën
     doc.text(`Data: ${new Date().toLocaleDateString('sq-AL')}`, pageWidth / 2, y, { align: 'center' }); y += 10;
 
     doc.setDrawColor(200, 210, 230); doc.line(15, y, pageWidth - 15, y); y += 8;
@@ -713,7 +754,6 @@ export default function Dashboard() {
       doc.setFont("helvetica", "bold"); doc.setFontSize(13); doc.setTextColor(30, 58, 138);
       doc.text(subject.toUpperCase(), 15, y); y += 8;
 
-      // Header tabele
       doc.setFillColor(239, 246, 255); doc.rect(15, y - 4, pageWidth - 30, 8, 'F');
       doc.setFontSize(9); doc.setTextColor(71, 85, 105); doc.setFont("helvetica", "bold");
       doc.text("Studenti", 17, y);
@@ -740,7 +780,6 @@ export default function Dashboard() {
     doc.save(`Regjistri_Notave_${new Date().toLocaleDateString('sq-AL').replace(/\//g, '-')}.pdf`);
   };
 
-  // ─── AI EXAMS HANDLERS ────────────────────────────────────────────────────
   const handleExamGenerate = async (e) => {
     e.preventDefault();
     setExamLoading(true); setExamQuestions([]); setIsSaved(false);
@@ -789,7 +828,6 @@ export default function Dashboard() {
     doc.save(`${examFormData.subject || 'Provim'}.pdf`);
   };
 
-  // ─── HOMEWORK HANDLERS ────────────────────────────────────────────────────
   const validateHomeworkInputs = () => {
     const errors = {};
     if (!homeworkInput.subject.trim()) errors.subject = "Lënda nuk mund të jetë bosh.";
@@ -860,7 +898,6 @@ export default function Dashboard() {
     } catch (err) { setHomeworkApiError("Gabim shkarkimi: " + err.message); }
   };
 
-  // ─── GRADING HANDLERS ─────────────────────────────────────────────────────
   const validateGradingInputs = () => {
     const errors = {};
     if (!inputData.questionText.trim()) errors.questionText = "Pyetja nuk mund të jetë bosh.";
@@ -958,21 +995,50 @@ export default function Dashboard() {
   };
 
   const handleProfileUpdate = async (e) => {
-    e.preventDefault(); setLoading(true);
+    e.preventDefault(); 
+    setLoading(true);
+    
     try {
-      let avatarUrl = profileForm.avatarPreview;
-      if (profileForm.avatarFile) { const fe = profileForm.avatarFile.name.split('.').pop();
-        const fn = `${user.id}-${Date.now()}.${fe}`; const fp = `avatars/${fn}`; const { error: ue } = await supabase.storage.from('profiles').upload(fp, profileForm.avatarFile);
-        if (ue) throw ue; const { data: pd } = supabase.storage.from('profiles').getPublicUrl(fp); avatarUrl = pd.publicUrl;
+      let finalAvatarUrl = profileForm.avatarPreview;
+
+      // 1. Ngarkimi në Storage (ndodh vetëm nëse ka skedar të ri)
+      if (profileForm.avatarFile) { 
+        const fileExt = profileForm.avatarFile.name.split('.').pop();
+        const fileName = `${user.id}-${Date.now()}.${fileExt}`; 
+        
+        const { error: uploadError } = await supabase.storage
+          .from('profiles')
+          .upload(fileName, profileForm.avatarFile, { upsert: true });
+          
+        if (uploadError) throw uploadError; 
+        
+        const { data } = supabase.storage.from('profiles').getPublicUrl(fileName); 
+        finalAvatarUrl = data.publicUrl;
       }
-      const { error: ue } = await supabase.auth.updateUser({ data: { full_name: profileForm.fullName, avatar_url: avatarUrl } });
-      if (ue) throw ue;
-      if (profileForm.newPassword) { if (!profileForm.currentPassword) throw new Error("Current password required!");
-        const { error: ve } = await supabase.auth.signInWithPassword({ email: user.email, password: profileForm.currentPassword }); if (ve) throw new Error("Invalid current password!");
-        const { error: pe } = await supabase.auth.updateUser({ password: profileForm.newPassword }); if (pe) throw pe;
-      }
-      alert("Profile updated!"); setIsProfileOpen(false); window.location.reload();
-    } catch (err) { alert("Error: " + err.message); } finally { setLoading(false); }
+
+      // 2. Ruajtja dhe fshirja
+      const { error: updateError } = await supabase.auth.updateUser({ 
+        data: { 
+          full_name: profileForm.fullName, 
+          avatar_url: finalAvatarUrl || "" 
+        } 
+      });
+      
+      if (updateError) throw updateError;
+      
+      const mesazhi = finalAvatarUrl ? "Profili u përditësua!" : "Fotoja u fshi me sukses!";
+      await notify(user.id, "Përditësim", mesazhi, 'success');
+
+      setIsProfileOpen(false); 
+      const { data: { user: updatedUser } } = await supabase.auth.getUser();
+      setUser(updatedUser);
+      setProfileForm(prev => ({...prev, avatarFile: null}));
+
+    } catch (err) { 
+      notify(user?.id, "Gabim", err.message, 'error');
+    } finally { 
+      setLoading(false); 
+    }
   };
 
   const renderedProfileModal = useMemo(() => (
@@ -983,29 +1049,100 @@ export default function Dashboard() {
           <motion.div ref={profileRef} initial={{ scale: 0.97, opacity: 0, y: 10 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.97, opacity: 0, y: 10 }} className="relative bg-white w-full max-w-md rounded-[32px] shadow-2xl overflow-hidden">
             <div className="bg-gradient-to-br from-blue-600 to-indigo-700 p-8 text-white text-center relative">
               <button onClick={() => setIsProfileOpen(false)} className="absolute top-4 right-4 p-2 bg-white/10 hover:bg-white/20 rounded-full transition-all"><X size={20}/></button>
-              <div className="relative w-24 h-24 mx-auto mb-4 group cursor-pointer">
-                <div className="w-full h-full bg-white/20 rounded-3xl flex items-center justify-center border-2 border-white/30 overflow-hidden shadow-lg">{profileForm.avatarPreview ? <img src={profileForm.avatarPreview} alt="Avatar" className="w-full h-full object-cover" /> : <User size={40} className="text-white/80"/>}</div>
-                <div className="absolute inset-0 bg-black/40 rounded-3xl flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm"><Camera size={24} className="text-white" /></div>
-                <input type="file" accept="image/*" className="absolute inset-0 w-full h-full opacity-0 cursor-pointer" onChange={(e) => { const f = e.target.files[0];
-                  if(f) setProfileForm({...profileForm, avatarPreview: URL.createObjectURL(f), avatarFile: f}); }} />
+              
+              {/* ZONA E FOTOS ME MENU INTERAKTIVE */}
+              <div className="relative w-24 h-24 mx-auto mb-4 group">
+                <div className="w-full h-full bg-white/20 rounded-3xl flex items-center justify-center border-2 border-white/30 overflow-hidden shadow-lg relative">
+                  {profileForm.avatarPreview ? (
+                    <img src={profileForm.avatarPreview} alt="Avatar" className="w-full h-full object-cover" />
+                  ) : (
+                    <User size={40} className="text-white/80"/>
+                  )}
+                  
+                  {/* Butoni sipër fotos që hap menunë */}
+                  <button 
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setIsAvatarMenuOpen(!isAvatarMenuOpen);
+                    }}
+                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all backdrop-blur-sm z-10"
+                    title="Ndrysho foton e profilit"
+                  >
+                    <Camera size={24} className="text-white" />
+                  </button>
+                </div>
+
+                {/* MENUA E VOGËL E FOTOS (E SHFAQUR ME KLIKIM) */}
+                <AnimatePresence>
+                  {isAvatarMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.8, y: 10 }}
+                      animate={{ opacity: 1, scale: 1, y: 0 }}
+                      exit={{ opacity: 0, scale: 0.8, y: 10 }}
+                      className="absolute top-full left-1/2 -translate-x-1/2 mt-2 w-40 bg-white border border-slate-200 rounded-2xl shadow-xl z-20 overflow-hidden p-1.5"
+                    >
+                      {/* Opsioni 1: Ndrysho Foton (Insert) */}
+                      <div className="relative">
+                        <button
+                          type="button"
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50 rounded-xl transition-all"
+                        >
+                          <Pencil size={14} className="text-blue-500" />
+                        </button>
+                        <input 
+                          type="file" 
+                          accept="image/*" 
+                          className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10" 
+                          onChange={(e) => { 
+                            const file = e.target.files[0];
+                            if(file) {
+                              setProfileForm({...profileForm, avatarPreview: URL.createObjectURL(file), avatarFile: file});
+                              setIsAvatarMenuOpen(false);
+                            }
+                          }} 
+                        />
+                      </div>
+
+                      {/* Opsioni 2: Fshi Foton (Delete) */}
+                      {profileForm.avatarPreview && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            setProfileForm({...profileForm, avatarPreview: null, avatarFile: null});
+                            setIsAvatarMenuOpen(false);
+                          }}
+                          className="w-full flex items-center gap-2.5 px-3 py-2 text-xs font-bold text-red-500 hover:bg-red-50 rounded-xl transition-all"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
-              <h3 className="text-2xl font-black uppercase tracking-tight truncate px-4">{profileForm.fullName || user?.email.split('@')[0]}</h3>
+
+              <h3 className="text-2xl font-black tracking-tight truncate px-4">{profileForm.fullName || user?.email.split('@')[0]}</h3>
               <p className="text-blue-200 text-xs font-bold uppercase tracking-widest mt-1">{user?.email}</p>
             </div>
+            
             <form onSubmit={handleProfileUpdate} className="p-6 md:p-8 space-y-4">
               <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"><UserCircle size={14}/> Full Name</label><input type="text" value={profileForm.fullName} onChange={(e) => setProfileForm({...profileForm, fullName: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
               <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"><Shield size={14}/> Current Password</label><input type="password" value={profileForm.currentPassword} onChange={(e) => setProfileForm({...profileForm, currentPassword: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
               <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2"><Shield size={14}/> New Password</label><input type="password" value={profileForm.newPassword} onChange={(e) => setProfileForm({...profileForm, newPassword: e.target.value})} className="w-full bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 text-sm font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
               <div className="pt-4 flex gap-3">
-                <button type="button" onClick={() => setIsProfileOpen(false)} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-slate-100 text-slate-500">Cancel</button>
-                <button type="submit" disabled={loading} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-blue-600 text-white shadow-lg">Save</button>
+                <button type="button" onClick={() => setIsProfileOpen(false)} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-slate-100 text-slate-500 hover:bg-slate-200 transition-all">Cancel</button>
+                <button type="submit" disabled={loading} className="flex-1 py-4 rounded-2xl font-bold uppercase tracking-wider text-xs bg-blue-600 hover:bg-blue-700 text-white shadow-lg flex justify-center items-center gap-2">
+                  {loading ? 'Po Ruhet...' : 'Save'}
+                </button>
               </div>
             </form>
           </motion.div>
         </div>
       )}
     </AnimatePresence>
-  ), [isProfileOpen, profileForm, loading, user]);
+  ), [isProfileOpen, profileForm, loading, user, isAvatarMenuOpen]);
 
   const renderedFeedbackModal = useMemo(() => (
     <AnimatePresence>
@@ -1076,16 +1213,80 @@ export default function Dashboard() {
 
       <div className="flex-1 flex flex-col overflow-hidden w-full">
         {/* ── HEADER ─────────────────────────────────────────────────────────── */}
-        <header className="h-20 bg-white/50 backdrop-blur-md border-b border-slate-100 px-4 md:px-10 flex items-center justify-between shrink-0">
+        <header className="relative z-50 h-20 bg-white/50 backdrop-blur-md border-b border-slate-100 px-4 md:px-10 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
             <button onClick={() => setIsSidebarOpen(true)} className="md:hidden p-2 text-slate-600 bg-white rounded-xl shadow-sm border border-slate-100"><Menu size={20}/></button>
             <div className="flex flex-col">
-              <h2 className="text-base md:text-xl font-black text-slate-800 tracking-tight italic uppercase leading-none truncate max-w-[150px] md:max-w-none">Welcome, {profileForm.fullName.split(' ')[0]}!</h2>
+              <h2 className="text-base md:text-xl font-black text-slate-800 tracking-tight italic leading-none truncate max-w-[150px] md:max-w-none">Welcome, {profileForm.fullName.split(' ')[0]}!</h2>
               <p className="text-[8px] md:text-[10px] text-slate-400 font-bold uppercase italic tracking-widest mt-1 opacity-70">AI Teaching Assistant</p>
             </div>
           </div>
           <div className="flex items-center gap-2 md:gap-4">
-            <button className="hidden sm:block p-2.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-xl transition-all relative"><Bell size={20}/><span className="absolute top-2 right-2.5 w-2 h-2 bg-red-500 rounded-full border-2 border-white"></span></button>
+            
+{/* ── BUTONI I NJOFTIMEVE ── */}
+            <div className="relative hidden sm:block" ref={notifRef}>
+              <button 
+                onClick={toggleNotifications}
+                className={`p-2.5 rounded-xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
+              >
+                <Bell size={20}/>
+                
+                {/* ── NDRYSHIMI: Badge me Numër ── */}
+                {unreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 flex items-center justify-center min-w-[18px] h-[18px] px-1 bg-red-500 text-white text-[10px] font-black rounded-full border-2 border-white shadow-sm">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </button>
+
+              <AnimatePresence>
+                {isNotifOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                    className="absolute right-0 mt-3 w-80 md:w-[400px] bg-white border border-slate-200 rounded-[24px] shadow-2xl z-50 overflow-hidden"
+                  >
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/80 backdrop-blur-sm">
+                      <h3 className="font-black text-slate-700 uppercase tracking-tighter italic flex items-center gap-2"><Bell size={16} className="text-blue-500"/> Njoftimet</h3>
+                      <button onClick={closeNotificationsAndMarkRead} className="text-slate-400 hover:text-slate-600 p-1.5 bg-white rounded-lg shadow-sm border border-slate-100 transition-colors"><X size={14} /></button>
+                    </div>
+
+                    <div className="max-h-[400px] overflow-y-auto p-3 bg-slate-50/30 space-y-2">
+                      {notifications.length === 0 ? (
+                        <div className="text-center py-12 opacity-50">
+                          <Bell size={32} className="mx-auto mb-3 text-slate-300" />
+                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">Nuk keni asnjë njoftim</p>
+                        </div>
+                      ) : (
+                        notifications.map((notif) => (
+                          <div 
+                            key={notif.id} 
+                            className={`flex items-start justify-between p-4 rounded-2xl transition-all border ${notif.is_read ? 'bg-white border-slate-100 shadow-sm' : 'bg-blue-50/50 border-blue-100 shadow-md'}`}
+                          >
+                            <div className="pr-3">
+                              <p className={`text-sm font-bold tracking-tight leading-snug ${notif.is_read ? 'text-slate-600' : 'text-blue-800'}`}>{notif.title}</p>
+                              <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed font-medium">{notif.message}</p>
+                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-3">
+                                {new Date(notif.created_at).toLocaleDateString('sq-AL', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}
+                              </p>
+                            </div>
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
+                              className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-xl transition-colors shrink-0"
+                              title="Fshi njoftimin"
+                            >
+                              <Trash2 size={16} />
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+
             <button onClick={() => setIsProfileOpen(true)} className="flex items-center gap-2 md:gap-3 pl-1 pr-2 md:pl-2 md:pr-4 py-1 md:py-1.5 bg-white border border-slate-200 hover:border-blue-300 rounded-2xl shadow-sm transition-all active:scale-95">
               <div className="w-8 h-8 rounded-xl bg-blue-600 overflow-hidden flex items-center justify-center text-white shadow-md shadow-blue-100">{profileForm.avatarPreview ? <img src={profileForm.avatarPreview} alt="Avatar" className="w-full h-full object-cover" /> : <User size={16} />}</div>
               <div className="text-left hidden lg:block"><p className="text-[9px] font-black text-slate-400 uppercase italic leading-none mb-1">Profile</p><p className="text-xs font-bold text-slate-700 leading-none truncate max-w-[80px]">{profileForm.fullName}</p></div>
@@ -1284,28 +1485,24 @@ export default function Dashboard() {
               <motion.div key="gradebook" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-6">
 
                 {/* Header */}
-                {/* Rregullojmë gap dhe wrap për butona */}
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div>
                     <h2 className="text-xl md:text-2xl font-black text-slate-800 uppercase italic tracking-tighter flex items-center gap-2"><BookMarked className="text-blue-600" size={24} /> Regjistri i Notave</h2>
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">Menaxho notat e studentëve sipas lëndës</p>
                   </div>
-                  {/* Butonat tani përdorin flex-wrap për të shkuar në rresht të ri në ekranet e vogla */}
                   <div className="flex flex-wrap justify-end gap-3">
-                    {/* Export PDF */}
                     {gradebook.length > 0 && (
                       <button onClick={handleGbExportPDF} className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100">
                         <FileDown size={14} /> PDF
                       </button>
                     )}
                     
-                    {/* Butoni shto */}
                     <button onClick={() => { 
                         setGbShowForm(true); 
-                        setGbEditingId(null); // Sigurohemi qe nuk jemi ne edit mode
-                        setGbAddMode('new');  // Default to adding a new student
-                        setGbSelectedExistingStudent(null); // Ensure no existing student is selected
-                        setGbForm({ // Reset form fields to default
+                        setGbEditingId(null); 
+                        setGbAddMode('new');  
+                        setGbSelectedExistingStudent(null); 
+                        setGbForm({ 
                             subject: '', 
                             student_name: '', 
                             class_group: '',       
@@ -1315,7 +1512,7 @@ export default function Dashboard() {
                             period_2: '', 
                             period_3: '',
                             notes: '',               
-                            scale: '5-10'           
+                            scale: '5-10'            
                         }); 
                         setGbFormErrors({}); 
                     }} className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
@@ -1324,12 +1521,9 @@ export default function Dashboard() {
                   </div>
                 </div>
 
-
-
                 {/* VIEW PËR NOTAT (Default) */}
                 {gradebookSubTab === 'grades' && (
                   <>
-                    {/* Error */}
                     {gradebookError && (<div className="p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span>{gradebookError}</span><button onClick={() => setGradebookError(null)} className="ml-auto"><X size={14}/></button></div>)}
 
 <AnimatePresence>
@@ -1340,8 +1534,7 @@ export default function Dashboard() {
         {gbEditingId ? 'Ndrysho të dhënat e studentit' : (gbAddMode === 'new' ? 'Shto student të ri' : 'Shto lëndë për student ekzistues')}
       </h3>
       
-      {/* NEW: Zgjedhës modaliteti: Shto Student të Ri / Shto Lëndë për Student Ekzistues */}
-      {!gbEditingId && ( // Shfaqet vetëm në modalitetin e shtimit, jo të editimit
+      {!gbEditingId && ( 
         <div className="mb-6 bg-slate-50 p-4 rounded-2xl border border-slate-100">
             <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">Modaliteti i Shtimit</label>
             <div className="flex gap-2">
@@ -1349,8 +1542,8 @@ export default function Dashboard() {
                     type="button" 
                     onClick={() => {
                         setGbAddMode('new');
-                        setGbSelectedExistingStudent(null); // Pastrojme zgjedhjen
-                        setGbForm(prev => ({ // Pastrojme detajet e studentit, por jo lenden/notat
+                        setGbSelectedExistingStudent(null); 
+                        setGbForm(prev => ({ 
                             ...prev, 
                             student_name: '', class_group: '', student_id_number: '', email_contact: '', notes: '' 
                         }));
@@ -1363,11 +1556,10 @@ export default function Dashboard() {
                     type="button" 
                     onClick={() => {
                         setGbAddMode('existing');
-                        setGbForm(prev => ({ // Pastrojme detajet e studentit, por jo lenden/notat
+                        setGbForm(prev => ({ 
                             ...prev, 
                             student_name: '', class_group: '', student_id_number: '', email_contact: '', notes: '' 
                         }));
-                        // Nese ka vetem 1 student, zgjidhe ate automatikisht
                         if (gbUniqueStudents.length === 1) {
                             setGbSelectedExistingStudent(gbUniqueStudents[0]);
                             setGbForm(prev => ({
@@ -1406,7 +1598,6 @@ export default function Dashboard() {
                     student_id_number: student.student_id_number || '',
                     email_contact: student.email_contact || '',
                     notes: student.notes || '',
-                    // Lenda dhe notat mbeten te lira per tu shtuar
                   }));
                 } else {
                   setGbForm(prev => ({
@@ -1432,48 +1623,42 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Seksioni i Detajeve të Studentit */}
       <h4 className="text-xs font-bold text-slate-600 mb-4 flex items-center gap-2"><User size={14} className="text-blue-500"/> Detajet e Studentit</h4>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
-        {/* Emri Mbiemri */}
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><User size={14}/> Studenti *</label>
           <input type="text" placeholder="Emri Mbiemri" value={gbForm.student_name} onChange={(e) => { setGbForm({...gbForm, student_name: e.target.value}); if (gbFormErrors.student_name) setGbFormErrors(p => ({...p, student_name: null})); }} 
             className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.student_name ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} 
-            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly nëse është student ekzistues dhe jo në edit mode
+            readOnly={gbAddMode === 'existing' && !gbEditingId} 
           />
           {gbFormErrors.student_name && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.student_name}</p>}
         </div>
         
-        {/* Klasa / Grupi */}
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Users size={14}/> Klasa / Grupi *</label>
           <input type="text" placeholder="p.sh. 10-A, Grupi 3" value={gbForm.class_group} onChange={(e) => { setGbForm({...gbForm, class_group: e.target.value}); if (gbFormErrors.class_group) setGbFormErrors(p => ({...p, class_group: null})); }} 
             className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.class_group ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} 
-            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+            readOnly={gbAddMode === 'existing' && !gbEditingId} 
           />
           {gbFormErrors.class_group && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.class_group}</p>}
         </div>
         
-        {/* ID / Numri Amzës */}
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Hash size={14}/> ID / Nr. Regjistrit (Opsionale)</label>
           <input type="text" placeholder="p.sh. 123456" value={gbForm.student_id_number} onChange={(e) => setGbForm({...gbForm, student_id_number: e.target.value})} 
             className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all" 
-            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+            readOnly={gbAddMode === 'existing' && !gbEditingId} 
           />
         </div>
 
-        {/* Email / Kontakt */}
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Mail size={14}/> Email / Kontakt (Opsionale)</label>
           <input type="email" placeholder="p.sh. student@example.com" value={gbForm.email_contact} onChange={(e) => setGbForm({...gbForm, email_contact: e.target.value})} 
             className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all" 
-            readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+            readOnly={gbAddMode === 'existing' && !gbEditingId} 
           />
         </div>
 
-        {/* Lënda (Mbetet gjithmonë e editueshme) */}
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Book size={14}/> Lënda *</label>
           <input type="text" placeholder="p.sh. Matematikë" value={gbForm.subject} onChange={(e) => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
@@ -1481,13 +1666,11 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* SEKSIONI I NOTAVE (SHTO KETE PJESE) */}
       <h4 className="text-xs font-bold text-slate-600 mb-4 mt-8 flex items-center gap-2">
         <Activity size={14} className="text-emerald-500"/> Notat e Periudhave & Sistemi
       </h4>
       
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8 bg-slate-50 p-5 rounded-2xl border border-slate-200">
-        {/* Zgjedhja e Sistemit */}
         <div>
           <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Sistemi i Notave</label>
           <select 
@@ -1497,11 +1680,9 @@ export default function Dashboard() {
           >
             <option value="1-5">Sistemi 1-5</option>
             <option value="5-10">Sistemi 5-10</option>
-
           </select>
         </div>
 
-        {/* Period 1 */}
         <div>
           <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 1</label>
           <input 
@@ -1515,7 +1696,6 @@ export default function Dashboard() {
           {gbFormErrors.period_1 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_1}</p>}
         </div>
 
-        {/* Period 2 */}
         <div>
           <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 2</label>
           <input 
@@ -1529,7 +1709,6 @@ export default function Dashboard() {
           {gbFormErrors.period_2 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_2}</p>}
         </div>
 
-        {/* Period 3 */}
         <div>
           <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">Periudha 3</label>
           <input 
@@ -1545,15 +1724,13 @@ export default function Dashboard() {
       </div>
 
 
-      {/* Seksioni i Shënimeve */}
       <h4 className="text-xs font-bold text-slate-600 mb-4 flex items-center gap-2"><BookMarked size={14} className="text-purple-500"/> Shënime & Komente</h4>
                           <div className="mb-6">
-                            {/* Shënime */}
                             <div>
                               <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic">Shënime (Opsionale)</label>
                               <textarea rows="3" placeholder="Shto shënime ose komente të rëndësishme për studentin..." value={gbForm.notes} onChange={(e) => setGbForm({...gbForm, notes: e.target.value})} 
                                 className="w-full p-3 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all resize-y" 
-                                readOnly={gbAddMode === 'existing' && !gbEditingId} // Fusha bëhet readOnly
+                                readOnly={gbAddMode === 'existing' && !gbEditingId} 
                               />
                             </div>
                           </div>
@@ -1570,18 +1747,12 @@ export default function Dashboard() {
                       )}
                     </AnimatePresence>
 
-
-
-                    {/* Filtrime */}
-                    {/* Rregullojmë gridin e filtrave për responsive */}
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      {/* Kërkim */}
-                      <div className="relative col-span-full"> {/* Kërkimi zë gjithë gjerësinë në të gjitha ekranet */}
+                      <div className="relative col-span-full"> 
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                         <input type="text" placeholder="Kërko student, lëndë, klasë, ose ID..." value={gbSearchQuery} onChange={(e) => setGbSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 transition-all" />
                       </div>
                       
-                      {/* Filtro sipas lëndes */}
                       {gbSubjects.length > 0 && (
                         <div className="relative">
                           <select value={gbFilterSubject} onChange={(e) => setGbFilterSubject(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
@@ -1592,13 +1763,9 @@ export default function Dashboard() {
                         </div>
                       )}
 
-                
-
-
-                      {/* NEW: Filtro sipas Klasës/Grupit */}
                       {gbClasses.length > 0 && (
                         <div className="relative">
-                          <select value={gbFilterClass} onChange={(e) => setGbFilterClass(e.target.value)} className="appearance-none pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
+                          <select value={gbFilterClass} onChange={(e) => setGbFilterClass(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
                             <option value="all">Të gjitha klasat/grupet</option>
                             {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
                           </select>
@@ -1607,13 +1774,10 @@ export default function Dashboard() {
                       )}
                     </div>
 
-
-                    {/* Loading */}
                     {gradebookLoading && (
                       <div className="py-20 text-center"><Loader2 size={32} className="animate-spin text-blue-500 mx-auto mb-3" /><p className="text-[10px] font-black text-slate-400 uppercase italic tracking-widest animate-pulse">Duke ngarkuar regjistrin...</p></div>
                     )}
 
-                    {/* Empty state */}
                     {!gradebookLoading && gradebook.length === 0 && (
                       <div className="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-slate-100">
                         <BookMarked size={48} className="mx-auto mb-4 text-slate-200" />
@@ -1622,17 +1786,14 @@ export default function Dashboard() {
                       </div>
                     )}
 
-                    {/* Tabela e grupuar sipas lëndes */}
                     {!gradebookLoading && Object.entries(gbGrouped).map(([subject, students]) => (
                       <motion.div key={subject} initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
-                        {/* Header lënda */}
                         <div className="px-6 py-4 bg-gradient-to-r from-blue-50 to-slate-50 border-b border-slate-100 flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="w-2 h-6 bg-blue-500 rounded-full"></div>
                             <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-sm md:text-base">{subject}</h3>
                             <span className="text-[9px] font-black bg-blue-100 text-blue-600 px-2 py-0.5 rounded-lg uppercase">{students.length} studentë</span>
                           </div>
-                          {/* Mesatarja e lëndes */}
                           {(() => {
                             const avgs = students.filter(s => s.average !== null).map(s => s.average);
                             if (avgs.length === 0) return null;
@@ -1641,10 +1802,9 @@ export default function Dashboard() {
                           })()}
                         </div>
 
-                        {/* Tabela & Kartat Responsive */}
                         <div className="w-full">
                           
-                          {/* ── VERSIONI DESKTOP (Tabelë Klasike) ── */}
+                          {/* ── VERSIONI DESKTOP ── */}
                           <div className="hidden md:block overflow-x-auto">
                             <table className="w-full">
                               <thead>
@@ -1682,7 +1842,6 @@ export default function Dashboard() {
                                       ) : <span className="text-[10px] font-black text-slate-300 italic">—</span>}
                                     </td>
                                     <td className="px-6 py-4">
-                                      {/* Në Desktop e lëmë opacity-0 që të shfaqet vetëm në hover */}
                                       <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                                         <button onClick={() => handleGbEdit(student)} className="p-2 text-blue-500 hover:bg-blue-50 rounded-xl transition-all"><Pencil size={14} /></button>
                                         <button onClick={() => handleGbDelete(student.id)} className="p-2 text-red-400 hover:bg-red-50 rounded-xl transition-all"><Trash2 size={14} /></button>
@@ -1706,12 +1865,11 @@ export default function Dashboard() {
                             </table>
                           </div>
 
-                          {/* ── VERSIONI MOBILE (Karta pa scroll horizontal) ── */}
+                          {/* ── VERSIONI MOBILE ── */}
                           <div className="block md:hidden">
                             {students.map((student, idx) => (
                               <motion.div key={`mobile-${student.id}`} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.04 }} className="border-b border-slate-100 p-5 last:border-0 bg-white">
                                 
-                                {/* Koka e Kartës: Avatar dhe Emri */}
                                 <div className="flex items-center gap-3 mb-4">
                                   <div className="w-10 h-10 bg-blue-50 rounded-2xl flex items-center justify-center shrink-0 shadow-sm">
                                     <span className="text-xs font-black text-blue-500">{student.student_name.charAt(0).toUpperCase()}</span>
@@ -1726,7 +1884,6 @@ export default function Dashboard() {
                                   </div>
                                 </div>
 
-                                {/* Trupi i Kartës: Notat */}
                                 <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100/50">
                                   <div className="text-center flex flex-col items-center justify-center">
                                     <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">P.1</span>
@@ -1748,7 +1905,6 @@ export default function Dashboard() {
                                   </div>
                                 </div>
 
-                                {/* Fundi i Kartës: Veprimet (Butonat Gjithmonë të Dukshëm) */}
                                 <div className="flex items-center justify-between gap-2 pt-1">
                                   <button
                                     onClick={() => {
@@ -1773,7 +1929,6 @@ export default function Dashboard() {
                       </motion.div>
                     ))}
 
-                    {/* No results */}
                     {!gradebookLoading && gradebook.length > 0 && Object.keys(gbGrouped).length === 0 && (
                       <div className="py-16 text-center bg-white rounded-3xl border border-slate-100">
                         <Search size={32} className="mx-auto mb-3 text-slate-200" />
@@ -1792,7 +1947,6 @@ export default function Dashboard() {
                         <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-sm md:text-base">Mungesat: {absencesFilter}</h3>
                       </div>
                       <div className="flex items-center gap-3 relative">
-                        {/* Butoni Mungon me Dropdown */}
                         <div className="relative" ref={absenceDropdownRef}>
                           <button 
                             onClick={() => setShowAbsenceDropdown(!showAbsenceDropdown)}
@@ -1882,7 +2036,6 @@ export default function Dashboard() {
                 <div className="bg-white p-6 md:p-14 rounded-[32px] md:rounded-[40px] border border-slate-100 shadow-2xl w-full max-w-2xl relative overflow-hidden">
                   <div className="absolute top-0 left-0 w-full h-2 bg-gradient-to-r from-blue-600 to-indigo-500"></div>
                   
-                  {/* Header */}
                   <div className="text-center mb-6 md:mb-10">
                     <div className="w-12 h-12 md:w-16 md:h-16 bg-blue-50 rounded-2xl flex items-center justify-center mx-auto mb-4 md:mb-6 text-blue-600 shadow-inner">
                       <Timer size={28} />
@@ -1890,7 +2043,6 @@ export default function Dashboard() {
                     <h2 className="text-xl md:text-2xl font-black text-slate-800 tracking-tight">Menaxhimi i Kohës</h2>
                   </div>
 
-                  {/* Zgjedhja e Mode */}
                   <div className="flex bg-slate-50 p-1 md:p-1.5 rounded-xl md:rounded-2xl mb-6 md:mb-10">
                     <button 
                       onClick={() => { setTimerMode('timer'); setIsTimerActive(false); }}
@@ -1906,14 +2058,12 @@ export default function Dashboard() {
                     </button>
                   </div>
 
-                  {/* Ekrani i Kohës - (Këtu u zvogëlua teksti për mobile: text-6xl) */}
                   <div className="text-center mb-6 md:mb-10">
                     <div className={`text-6xl md:text-9xl font-black tracking-tighter ${time <= 60 && timerMode === 'timer' && time > 0 ? 'text-red-500 animate-pulse' : 'text-slate-800'}`}>
                       {formatTime(time)}
                     </div>
                   </div>
 
-                  {/* Inputi i Minutave */}
                   {timerMode === 'timer' && (
                     <div className="flex justify-center mb-6 md:mb-10">
                       <div className="flex items-center gap-2 md:gap-3 bg-slate-50 px-3 py-1.5 md:px-4 md:py-2 rounded-xl md:rounded-2xl border border-slate-100">
@@ -1934,7 +2084,6 @@ export default function Dashboard() {
                     </div>
                   )}
 
-                  {/* Butonat e Kontrollit */}
                   <div className="flex flex-col sm:flex-row justify-center gap-3 md:gap-4">
                     <button 
                       onClick={toggleTimer}
@@ -1959,7 +2108,8 @@ export default function Dashboard() {
           </AnimatePresence>
         </main>
       </div>
-{/* ── MODALI I ZILES (FRAMELESS - PA TABELË TË BARDHË) ── */}
+
+      {/* ── MODALI I ZILES ── */}
       <AnimatePresence>
         {isTimeUp && (
           <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-md">
@@ -1969,9 +2119,7 @@ export default function Dashboard() {
               exit={{ opacity: 0, scale: 0.8 }}
               className="flex flex-col items-center justify-center gap-8 w-[240px] h-[240px] relative"
             >
-              {/* Ikona e Ziles që noton me hije të fortë */}
               <div className="relative">
-                {/* Efekt shkëlqimi prapa ziles që të mos duket "e vdekur" pa sfond */}
                 <div className="absolute inset-0 bg-red-500 blur-[40px] opacity-40 animate-pulse"></div>
                 
                 <motion.div 
@@ -1986,7 +2134,6 @@ export default function Dashboard() {
                 </motion.div>
               </div>
 
-              {/* Teksti pa sfond */}
               <div className="text-center z-10">
                 <h2 className="text-2xl font-black text-white tracking-tight drop-shadow-md">
                   Koha mbaroi!
@@ -1996,7 +2143,6 @@ export default function Dashboard() {
                 </p>
               </div>
 
-              {/* Butoni që noton */}
               <button 
                 onClick={dismissTimeUp}
                 className="w-full bg-red-500 hover:bg-red-600 text-white font-black text-xs uppercase tracking-[0.2em] py-4 rounded-2xl shadow-[0_15px_30px_rgba(239,68,68,0.4)] transition-all active:scale-95 active:shadow-none"

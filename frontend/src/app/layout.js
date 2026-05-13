@@ -1,4 +1,5 @@
 import { AuthProvider } from '../context/AuthContext';
+import { Toaster } from 'sonner';
 import "./globals.css";
 
 export const metadata = {
@@ -16,6 +17,8 @@ export default function RootLayout({ children }) {
       <body>
         <AuthProvider>
           {children}
+          {/* Shtuam Toaster për njoftimet e menjëhershme */}
+          <Toaster position="top-right" richColors closeButton />
         </AuthProvider>
       </body>
     </html>
