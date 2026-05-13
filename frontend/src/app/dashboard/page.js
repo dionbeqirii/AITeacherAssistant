@@ -1272,8 +1272,9 @@ const renderedProfileModal = useMemo(() => (
           </div>
           <div className="flex items-center gap-2 md:gap-4">
             
-{/* ── BUTONI I NJOFTIMEVE ── */}
-            <div className="relative hidden sm:block" ref={notifRef}>
+
+            {/* ── BUTONI I NJOFTIMEVE ── */}
+              <div className="relative" ref={notifRef}>
               <button 
                 onClick={toggleNotifications}
                 className={`p-2.5 rounded-xl transition-all relative ${isNotifOpen ? 'bg-blue-50 text-blue-600' : 'text-slate-400 hover:text-blue-600 hover:bg-blue-50'}`}
