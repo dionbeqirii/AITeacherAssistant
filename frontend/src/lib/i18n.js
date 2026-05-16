@@ -311,6 +311,32 @@ const resources = {
       // === EVALUATION ===
       "EVAL_PREFIX": "Vlerësim",
 
+      // === GRADING IMAGE/PDF MODE ===
+      "GRADING_TAB_TEXT": "Tekst",
+      "GRADING_TAB_PHOTO": "Foto / Kamerë",
+      "GRADING_TAB_PDF": "PDF",
+      "BTN_CAPTURE": "Fotografo",
+      "BTN_OPEN_CAMERA": "Hap Kamerën",
+      "BTN_REMOVE_FILE": "Hiq skedarin",
+      "BTN_REMOVE_MATERIAL": "Hiq materialin",
+      "UPLOAD_PHOTO_OR_PDF": "Ngarko foto ose PDF",
+      "PDF_READY_ANALYZE": "PDF gati për analizë",
+      "UPLOAD_CLICK_PDF": "Kliko për të ngarkuar PDF",
+      "UPLOAD_CLICK_PHOTO": "Kliko për të ngarkuar foto",
+      "UPLOAD_SUPPORTS_PDF": "Mbështet: PDF",
+      "UPLOAD_SUPPORTS_IMG": "Mbështet: JPG, PNG, WEBP",
+      "GRADING_RUBRIC_OPT": "Rubrika (opsionale)",
+      "GRADING_RUBRIC_PH": "p.sh. 10 pikë për çdo pyetje të saktë...",
+      "GRADING_ANALYZE_PDF": "Analizo PDF-në",
+      "GRADING_ANALYZE_PHOTO": "Analizo Foton",
+
+      // === MATERIAL MODE (EXAMS & HOMEWORK) ===
+      "FROM_MATERIAL": "Nga Materiali",
+      "EXAM_MATERIAL_HINT": "Ngarko materialin mësimor — AI krijon provimin nga ai",
+      "HW_MATERIAL_HINT": "Ngarko materialin mësimor — AI krijon detyrat nga ai",
+      "EXAM_FROM_MATERIAL_BTN": "Krijo Provim nga Materiali",
+      "HW_FROM_MATERIAL_BTN": "Krijo Detyra nga Materiali",
+
       // === PDF/WORD GENERATION ===
       "PDF_GB_TITLE": "REGJISTRI I NOTAVE",
       "PDF_DATE": "Data:",
@@ -638,6 +664,32 @@ const resources = {
 
       // === EVALUATION ===
       "EVAL_PREFIX": "Evaluation",
+
+      // === GRADING IMAGE/PDF MODE ===
+      "GRADING_TAB_TEXT": "Text",
+      "GRADING_TAB_PHOTO": "Photo / Camera",
+      "GRADING_TAB_PDF": "PDF",
+      "BTN_CAPTURE": "Capture",
+      "BTN_OPEN_CAMERA": "Open Camera",
+      "BTN_REMOVE_FILE": "Remove file",
+      "BTN_REMOVE_MATERIAL": "Remove material",
+      "UPLOAD_PHOTO_OR_PDF": "Upload photo or PDF",
+      "PDF_READY_ANALYZE": "PDF ready for analysis",
+      "UPLOAD_CLICK_PDF": "Click to upload PDF",
+      "UPLOAD_CLICK_PHOTO": "Click to upload photo",
+      "UPLOAD_SUPPORTS_PDF": "Supports: PDF",
+      "UPLOAD_SUPPORTS_IMG": "Supports: JPG, PNG, WEBP",
+      "GRADING_RUBRIC_OPT": "Rubric (optional)",
+      "GRADING_RUBRIC_PH": "e.g. 10 points for each correct question...",
+      "GRADING_ANALYZE_PDF": "Analyze PDF",
+      "GRADING_ANALYZE_PHOTO": "Analyze Photo",
+
+      // === MATERIAL MODE (EXAMS & HOMEWORK) ===
+      "FROM_MATERIAL": "From Material",
+      "EXAM_MATERIAL_HINT": "Upload teaching material — AI creates the exam from it",
+      "HW_MATERIAL_HINT": "Upload teaching material — AI creates the homework from it",
+      "EXAM_FROM_MATERIAL_BTN": "Create Exam from Material",
+      "HW_FROM_MATERIAL_BTN": "Create Homework from Material",
 
       // === PDF/WORD GENERATION ===
       "PDF_GB_TITLE": "GRADE BOOK",

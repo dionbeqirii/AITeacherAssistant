@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* Enable class-based dark mode with dark: variant */
+@custom-variant dark (&:where(.dark, .dark *));
+
 :root {
   --background: #ffffff;
   --foreground: #171717;
@@ -36,3 +39,63 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* ──────────────────────── DARK MODE ──────────────────────── */
+html.dark { color-scheme: dark; }
+html.dark body { background-color: #0f172a; color: #e2e8f0; }
+
+/* Backgrounds */
+html.dark .bg-white  { background-color: #1e293b !important; }
+html.dark .bg-slate-50  { background-color: #0f172a !important; }
+html.dark .bg-slate-100 { background-color: #1e293b !important; }
+html.dark .bg-slate-200 { background-color: #334155 !important; }
+
+/* Glassmorphism header */
+html.dark .bg-white\/50 { background-color: rgba(30,41,59,0.85) !important; }
+
+/* Text */
+html.dark .text-slate-900 { color: #f1f5f9 !important; }
+html.dark .text-slate-800 { color: #e2e8f0 !important; }
+html.dark .text-slate-700 { color: #cbd5e1 !important; }
+html.dark .text-slate-600 { color: #94a3b8 !important; }
+html.dark .text-slate-500 { color: #64748b !important; }
+html.dark .text-slate-400 { color: #475569 !important; }
+html.dark .text-slate-300 { color: #334155 !important; }
+
+/* Borders */
+html.dark .border-slate-100 { border-color: #334155 !important; }
+html.dark .border-slate-200 { border-color: #475569 !important; }
+html.dark .border-dashed   { border-color: #334155 !important; }
+
+/* Inputs & Textareas & Selects */
+html.dark input:not([type="file"]):not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+html.dark textarea,
+html.dark select {
+  background-color: #0f172a !important;
+  border-color: #334155 !important;
+  color: #e2e8f0 !important;
+}
+html.dark input::placeholder,
+html.dark textarea::placeholder { color: #475569 !important; }
+html.dark input:focus,
+html.dark textarea:focus,
+html.dark select:focus { border-color: #3b82f6 !important; outline: none; }
+
+/* Hover overrides */
+html.dark .hover\:bg-slate-50:hover  { background-color: #1e293b !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
+html.dark .hover\:bg-slate-200:hover { background-color: #475569 !important; }
+
+/* Shadows — darken them */
+html.dark .shadow-sm  { box-shadow: 0 1px 3px 0 rgba(0,0,0,.5) !important; }
+html.dark .shadow-md  { box-shadow: 0 4px 6px -1px rgba(0,0,0,.5) !important; }
+html.dark .shadow-xl  { box-shadow: 0 20px 25px -5px rgba(0,0,0,.6) !important; }
+html.dark .shadow-2xl { box-shadow: 0 25px 50px -12px rgba(0,0,0,.7) !important; }
+
+/* Active sidebar tab */
+html.dark .bg-blue-50 { background-color: #1e3a5f !important; }
+
+/* Chart area */
+html.dark .bg-white.p-4,
+html.dark .bg-white.p-6 { background-color: #1e293b !important; }
+/* ──────────────────────────────────────────────────────────── */

@@ -10,7 +10,7 @@ import {
   MessageSquare, Star, TrendingUp, Award, Zap, Activity, ClipboardList, Calendar, Target,
   Save, FileDown, Loader2, BookMarked, Plus, Pencil, Search, ChevronDown, Check,
   Users, Hash, Mail, Book, 
-  Timer, Play, Pause, RotateCcw, Languages
+  Timer, Play, Pause, RotateCcw, Languages, Upload, FileImage, Moon, Sun
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import '../../lib/i18n';
@@ -66,6 +66,7 @@ function GradeBadge({ value, scale }) {
 
 export default function Dashboard() {
   const { t, i18n } = useTranslation();
+  const [darkMode, setDarkMode] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
   const [user, setUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -166,12 +167,26 @@ export default function Dashboard() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSaved, setIsSaved] = useState(false);
   const [examLoading, setExamLoading] = useState(false);
+  const [examMode, setExamMode] = useState('manual');
+  const [examMatFile, setExamMatFile] = useState(null);
+  const [examMatPreview, setExamMatPreview] = useState(null);
+  const [examMatCamera, setExamMatCamera] = useState(false);
+  const examCameraRef = useRef(null);
+  const examCanvasRef = useRef(null);
+  const examFileInputRef = useRef(null);
 
   // ─── STATE HOMEWORK ───────────────────────────────────────────────────────
   const [homeworkInput, setHomeworkInput] = useState({ subject: '', topic: '', level: '', numTasks: 3, type: 'open', deadline: '', extraInfo: '' });
   const [generatedHomework, setGeneratedHomework] = useState(null);
   const [homeworkFieldErrors, setHomeworkFieldErrors] = useState({});
   const [homeworkApiError, setHomeworkApiError] = useState(null);
+  const [hwMode, setHwMode] = useState('manual');
+  const [hwMatFile, setHwMatFile] = useState(null);
+  const [hwMatPreview, setHwMatPreview] = useState(null);
+  const [hwMatCamera, setHwMatCamera] = useState(false);
+  const hwCameraRef = useRef(null);
+  const hwCanvasRef = useRef(null);
+  const hwFileInputRef = useRef(null);
 
   // STATE GRADEBOOK & ABSENCES ───────────────────────────────────────────
   const [gradebook, setGradebook] = useState([]);
@@ -211,6 +226,13 @@ export default function Dashboard() {
   const absenceDropdownRef = useRef(null);
 
   const [inputData, setInputData] = useState({ studentAnswer: '', questionText: '', rubric: '', subject: 'Programming' });
+  const [gradingMode, setGradingMode] = useState('text');
+  const [selectedFile, setSelectedFile] = useState(null);
+  const [filePreview, setFilePreview] = useState(null);
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const cameraRef = useRef(null);
+  const canvasRef = useRef(null);
+  const fileInputRef = useRef(null);
   const [materialInput, setMaterialInput] = useState({ subject: '', level: '', topic: '', materialType: 'summary' });
   const [generatedMaterial, setGeneratedMaterial] = useState(null);
   const gradingAreaRef = useRef(null);
@@ -223,9 +245,23 @@ export default function Dashboard() {
     t('LOAD_FINALIZING')
   ];
   
-  const resetGradingFields = () => { 
-    setResult(null); setError(null); setFieldErrors({}); setApiError(null); setInputData({ studentAnswer: '', questionText: '', rubric: '', subject: 'Programming' });
+  const resetGradingFields = () => {
+    setResult(null); setError(null); setFieldErrors({}); setApiError(null);
+    setInputData({ studentAnswer: '', questionText: '', rubric: '', subject: 'Programming' });
+    setSelectedFile(null); setFilePreview(null); setIsCameraOpen(false);
+    if (cameraRef.current?.srcObject) { cameraRef.current.srcObject.getTracks().forEach(t => t.stop()); cameraRef.current.srcObject = null; }
   };
+
+  useEffect(() => {
+    const stored = localStorage.getItem('darkMode');
+    if (stored === 'true') setDarkMode(true);
+  }, []);
+
+  useEffect(() => {
+    if (darkMode) { document.documentElement.classList.add('dark'); }
+    else { document.documentElement.classList.remove('dark'); }
+    localStorage.setItem('darkMode', String(darkMode));
+  }, [darkMode]);
 
   useEffect(() => {
     const handleClickOutside = (event) => {
@@ -792,6 +828,7 @@ export default function Dashboard() {
 
   const handleExamGenerate = async (e) => {
     e.preventDefault();
+    if (examMode === 'material') { handleExamFromMaterial(); return; }
     setExamLoading(true); setExamQuestions([]); setIsSaved(false);
     try {
       const res = await fetch('/api/v1/exams/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(examFormData) });
@@ -799,6 +836,106 @@ export default function Dashboard() {
       if (result.success) setExamQuestions(result.data); else alert(t('ERR_GENERATING') + result.error);
     } catch { alert(t('ERR_NO_SERVER')); }
     finally { setExamLoading(false); }
+  };
+
+  const handleExamFromMaterial = async () => {
+    if (!examMatFile) { alert('Ngarko një foto ose PDF të materialit fillimisht.'); return; }
+    setExamLoading(true); setExamQuestions([]); setIsSaved(false);
+    try {
+      const fd = new FormData();
+      fd.append('file', examMatFile);
+      fd.append('level', examFormData.level);
+      fd.append('numQuestions', String(examFormData.numQuestions));
+      fd.append('type', examFormData.type);
+      fd.append('difficulty', examFormData.difficulty);
+      fd.append('professorName', examFormData.professorName);
+      fd.append('extraInfo', examFormData.extraInfo);
+      const res = await fetch('/api/v1/exams/generate-from-material', { method: 'POST', body: fd });
+      const result = await res.json();
+      if (result.success) setExamQuestions(result.data); else alert('Gabim: ' + result.error);
+    } catch (err) { alert('Gabim: ' + err.message); }
+    finally { setExamLoading(false); }
+  };
+
+  const openExamCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setExamMatCamera(true);
+      setTimeout(() => { if (examCameraRef.current) examCameraRef.current.srcObject = stream; }, 100);
+    } catch (err) { alert('Kamera nuk mund të hapet: ' + err.message); }
+  };
+
+  const stopExamCamera = () => {
+    if (examCameraRef.current?.srcObject) { examCameraRef.current.srcObject.getTracks().forEach(t => t.stop()); examCameraRef.current.srcObject = null; }
+    setExamMatCamera(false);
+  };
+
+  const captureExamPhoto = () => {
+    const video = examCameraRef.current; const canvas = examCanvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'material.jpg', { type: 'image/jpeg' });
+      setExamMatFile(file); setExamMatPreview(canvas.toDataURL('image/jpeg')); stopExamCamera();
+    }, 'image/jpeg', 0.92);
+  };
+
+  const handleExamMatFileSelect = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setExamMatFile(file);
+    if (file.type.startsWith('image/')) { const r = new FileReader(); r.onload = ev => setExamMatPreview(ev.target.result); r.readAsDataURL(file); }
+    else setExamMatPreview(null);
+  };
+
+  const handleHwFromMaterial = async () => {
+    if (!hwMatFile) { alert('Ngarko një foto ose PDF të materialit fillimisht.'); return; }
+    if (isSubmitting.current) return; isSubmitting.current = true;
+    setLoading(true); setGeneratedHomework(null); setHomeworkApiError(null);
+    try {
+      const fd = new FormData();
+      fd.append('file', hwMatFile);
+      fd.append('level', homeworkInput.level);
+      fd.append('numTasks', String(homeworkInput.numTasks));
+      fd.append('type', homeworkInput.type);
+      fd.append('deadline', homeworkInput.deadline);
+      fd.append('extraInfo', homeworkInput.extraInfo);
+      const res = await fetch('/api/v1/homework/generate-from-material', { method: 'POST', body: fd });
+      const result = await res.json();
+      if (result.success) setGeneratedHomework(result.homework); else setHomeworkApiError(result.error);
+    } catch (err) { setHomeworkApiError(err.message); }
+    finally { setLoading(false); isSubmitting.current = false; }
+  };
+
+  const openHwCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setHwMatCamera(true);
+      setTimeout(() => { if (hwCameraRef.current) hwCameraRef.current.srcObject = stream; }, 100);
+    } catch (err) { setHomeworkApiError('Kamera nuk mund të hapet: ' + err.message); }
+  };
+
+  const stopHwCamera = () => {
+    if (hwCameraRef.current?.srcObject) { hwCameraRef.current.srcObject.getTracks().forEach(t => t.stop()); hwCameraRef.current.srcObject = null; }
+    setHwMatCamera(false);
+  };
+
+  const captureHwPhoto = () => {
+    const video = hwCameraRef.current; const canvas = hwCanvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth; canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'material-hw.jpg', { type: 'image/jpeg' });
+      setHwMatFile(file); setHwMatPreview(canvas.toDataURL('image/jpeg')); stopHwCamera();
+    }, 'image/jpeg', 0.92);
+  };
+
+  const handleHwMatFileSelect = (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setHwMatFile(file);
+    if (file.type.startsWith('image/')) { const r = new FileReader(); r.onload = ev => setHwMatPreview(ev.target.result); r.readAsDataURL(file); }
+    else setHwMatPreview(null);
   };
 
   const handleSaveToHistory = async () => {
@@ -1004,6 +1141,89 @@ export default function Dashboard() {
     setLoading(false); isSubmitting.current = false;
   };
 
+  const handleFileSelect = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setSelectedFile(file);
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (ev) => setFilePreview(ev.target.result);
+      reader.readAsDataURL(file);
+    } else {
+      setFilePreview(null);
+    }
+  };
+
+  const openCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setIsCameraOpen(true);
+      setTimeout(() => { if (cameraRef.current) cameraRef.current.srcObject = stream; }, 100);
+    } catch (err) {
+      setError('Kamera nuk mund të hapet: ' + err.message);
+    }
+  };
+
+  const stopCamera = () => {
+    if (cameraRef.current?.srcObject) {
+      cameraRef.current.srcObject.getTracks().forEach(t => t.stop());
+      cameraRef.current.srcObject = null;
+    }
+    setIsCameraOpen(false);
+  };
+
+  const capturePhoto = () => {
+    const video = cameraRef.current;
+    const canvas = canvasRef.current;
+    if (!video || !canvas) return;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    canvas.toBlob((blob) => {
+      const file = new File([blob], 'exam-photo.jpg', { type: 'image/jpeg' });
+      setSelectedFile(file);
+      setFilePreview(canvas.toDataURL('image/jpeg'));
+      stopCamera();
+    }, 'image/jpeg', 0.92);
+  };
+
+  const handleImageGrade = async () => {
+    if (!selectedFile) { setError('Zgjidh një foto ose PDF të provimit.'); return; }
+    if (isSubmitting.current) return;
+    isSubmitting.current = true;
+    setLoading(true); setError(null); setResult(null); setApiError(null);
+    await checkSessionAndRun(async () => {
+      try {
+        const fd = new FormData();
+        fd.append('file', selectedFile);
+        fd.append('subject', inputData.subject || 'Pa lëndë');
+        fd.append('rubric', inputData.rubric || '');
+        const controller = new AbortController();
+        const tid = setTimeout(() => controller.abort(), 60000);
+        const res = await fetch('/api/v1/grading/grade-image', { method: 'POST', body: fd, signal: controller.signal });
+        clearTimeout(tid);
+        if (!res.ok) { throw new Error(t('ERR_SERVER_STATUS', { status: res.status })); }
+        const data = await res.json();
+        if (data.success) {
+          setResult(data.data);
+          const { data: convData, error: convError } = await supabase.from('conversations').insert([{ user_id: user.id, title: `${t('EVAL_PREFIX')}: ${selectedFile.name}` }]).select().single();
+          if (!convError) {
+            await supabase.from('messages').insert([
+              { conversation_id: convData.id, role: 'user', content: `[Foto/PDF] ${selectedFile.name}` },
+              { conversation_id: convData.id, role: 'assistant', content: JSON.stringify(data.data) }
+            ]);
+          }
+          setStats(prev => ({ ...prev, totalEvaluations: prev.totalEvaluations + 1, thisWeek: prev.thisWeek + 1 }));
+          fetchHistory(user.id);
+        } else { throw new Error(data.error || t('ERR_EVAL_FAILED')); }
+      } catch (err) {
+        if (err.name === 'AbortError') setError(t('ERR_TIMEOUT'));
+        else setError(err.message);
+      }
+    });
+    setLoading(false); isSubmitting.current = false;
+  };
+
   const handleProfileUpdate = async (e) => {
     e.preventDefault(); 
     setLoading(true);
@@ -1159,19 +1379,42 @@ const renderedProfileModal = useMemo(() => (
                   <Languages size={14}/> {t('LANGUAGE')}
                 </label>
                 <div className="flex gap-2">
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => i18n.changeLanguage('sq')}
                     className={`flex-1 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${i18n.language?.includes('sq') ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'}`}
                   >
                     Shqip
                   </button>
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={() => i18n.changeLanguage('en')}
                     className={`flex-1 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${i18n.language?.includes('en') ? 'bg-blue-600 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'}`}
                   >
                     English
+                  </button>
+                </div>
+              </div>
+
+              {/* ── DARK MODE TOGGLE ── */}
+              <div>
+                <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                  {darkMode ? <Moon size={14}/> : <Sun size={14}/>} Tema
+                </label>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDarkMode(false)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${!darkMode ? 'bg-amber-400 text-white shadow-md shadow-amber-100' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'}`}
+                  >
+                    <Sun size={14}/> Light
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDarkMode(true)}
+                    className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs uppercase tracking-widest transition-all ${darkMode ? 'bg-slate-800 text-white shadow-md' : 'bg-slate-50 text-slate-500 hover:bg-slate-100 border border-slate-200'}`}
+                  >
+                    <Moon size={14}/> Dark
                   </button>
                 </div>
               </div>
@@ -1187,7 +1430,7 @@ const renderedProfileModal = useMemo(() => (
         </div>
       )}
     </AnimatePresence>
-  ), [isProfileOpen, profileForm, loading, user, isAvatarMenuOpen, t, i18n.language]);
+  ), [isProfileOpen, profileForm, loading, user, isAvatarMenuOpen, t, i18n.language, darkMode]);
 
   const renderedFeedbackModal = useMemo(() => (
     <AnimatePresence>
@@ -1295,35 +1538,35 @@ const renderedProfileModal = useMemo(() => (
                     initial={{ opacity: 0, y: 10, scale: 0.95 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                    className="absolute right-0 mt-3 w-80 md:w-[400px] bg-white border border-slate-200 rounded-[24px] shadow-2xl z-50 overflow-hidden"
+                    className="absolute right-0 mt-3 w-80 md:w-[400px] bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-[24px] shadow-2xl z-50 overflow-hidden"
                   >
-                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 bg-slate-50/80 backdrop-blur-sm">
-                      <h3 className="font-black text-slate-700 uppercase tracking-tighter italic flex items-center gap-2"><Bell size={16} className="text-blue-500"/> {t('NOTIF_TITLE')}</h3>
-                      <button onClick={closeNotificationsAndMarkRead} className="text-slate-400 hover:text-slate-600 p-1.5 bg-white rounded-lg shadow-sm border border-slate-100 transition-colors"><X size={14} /></button>
+                    <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 dark:border-slate-700 bg-slate-50/80 dark:bg-slate-900/80 backdrop-blur-sm">
+                      <h3 className="font-black text-slate-700 dark:text-slate-200 uppercase tracking-tighter italic flex items-center gap-2"><Bell size={16} className="text-blue-500"/> {t('NOTIF_TITLE')}</h3>
+                      <button onClick={closeNotificationsAndMarkRead} className="text-slate-400 dark:text-slate-300 hover:text-slate-600 dark:hover:text-slate-100 p-1.5 bg-white dark:bg-slate-700 rounded-lg shadow-sm border border-slate-100 dark:border-slate-600 transition-colors"><X size={14} /></button>
                     </div>
 
-                    <div className="max-h-[400px] overflow-y-auto p-3 bg-slate-50/30 space-y-2">
+                    <div className="max-h-[400px] overflow-y-auto p-3 bg-slate-50/30 dark:bg-slate-900/30 space-y-2">
                       {notifications.length === 0 ? (
                         <div className="text-center py-12 opacity-50">
-                          <Bell size={32} className="mx-auto mb-3 text-slate-300" />
-                          <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest italic">{t('NOTIF_EMPTY')}</p>
+                          <Bell size={32} className="mx-auto mb-3 text-slate-300 dark:text-slate-600" />
+                          <p className="text-[10px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest italic">{t('NOTIF_EMPTY')}</p>
                         </div>
                       ) : (
                         notifications.map((notif) => (
-                          <div 
-                            key={notif.id} 
-                            className={`flex items-start justify-between p-4 rounded-2xl transition-all border ${notif.is_read ? 'bg-white border-slate-100 shadow-sm' : 'bg-blue-50/50 border-blue-100 shadow-md'}`}
+                          <div
+                            key={notif.id}
+                            className={`flex items-start justify-between p-4 rounded-2xl transition-all border ${notif.is_read ? 'bg-white dark:bg-slate-700/50 border-slate-100 dark:border-slate-600 shadow-sm' : 'bg-blue-50/50 dark:bg-blue-900/20 border-blue-100 dark:border-blue-800/50 shadow-md'}`}
                           >
                             <div className="pr-3">
-                              <p className={`text-sm font-bold tracking-tight leading-snug ${notif.is_read ? 'text-slate-600' : 'text-blue-800'}`}>{notif.title}</p>
-                              <p className="text-[11px] text-slate-500 mt-1.5 leading-relaxed font-medium">{notif.message}</p>
-                              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mt-3">
+                              <p className={`text-sm font-bold tracking-tight leading-snug ${notif.is_read ? 'text-slate-600 dark:text-slate-200' : 'text-blue-800 dark:text-blue-300'}`}>{notif.title}</p>
+                              <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed font-medium">{notif.message}</p>
+                              <p className="text-[9px] font-black text-slate-400 dark:text-slate-500 uppercase tracking-widest mt-3">
                                 {new Date(notif.created_at).toLocaleDateString(i18n.language === 'sq' ? 'sq-AL' : 'en-US', {day: '2-digit', month: 'short', hour: '2-digit', minute:'2-digit'})}
                               </p>
                             </div>
-                            <button 
+                            <button
                               onClick={(e) => { e.stopPropagation(); deleteNotification(notif.id); }}
-                              className="text-slate-300 hover:text-red-500 hover:bg-red-50 p-2 rounded-xl transition-colors shrink-0"
+                              className="text-slate-300 dark:text-slate-500 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 p-2 rounded-xl transition-colors shrink-0"
                               title={t('NOTIF_DELETE')}
                             >
                               <Trash2 size={16} />
@@ -1380,21 +1623,110 @@ const renderedProfileModal = useMemo(() => (
                 {(error || apiError) && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span>{error || apiError}</span></motion.div>)}
                 <div ref={gradingAreaRef} className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8 mb-12">
                   <section className="bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100">
-                    <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> {t('GRADING_TASK_DETAILS')}</h2>
-                    <div className="space-y-6">
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">{t('GRADING_EXAM_Q')}</label>
-                        <textarea value={inputData.questionText} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm md:text-base ${fieldErrors.questionText ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} rows="3" placeholder={t('GRADING_Q_PH')} maxLength={MAX_QUESTION_LENGTH} onChange={(e) => { setInputData({...inputData, questionText: e.target.value}); if (fieldErrors.questionText) setFieldErrors(p => ({...p, questionText: null})); }} />
-                        <div className="flex justify-between mt-1">{fieldErrors.questionText ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.questionText}</p> : <span />}<span className={`text-[10px] font-bold italic ${inputData.questionText.length > MAX_QUESTION_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>{inputData.questionText.length}/{MAX_QUESTION_LENGTH}</span></div>
-                      </div>
-                      <div>
-                        <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">{t('GRADING_STUDENT_ANS')}</label>
-                        <textarea value={inputData.studentAnswer} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all h-32 md:h-40 font-medium text-sm md:text-base ${fieldErrors.studentAnswer ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} placeholder={t('GRADING_A_PH')} maxLength={MAX_ANSWER_LENGTH} onChange={(e) => { setInputData({...inputData, studentAnswer: e.target.value}); if (fieldErrors.studentAnswer) setFieldErrors(p => ({...p, studentAnswer: null})); }} />
-                        <div className="flex justify-between mt-1">{fieldErrors.studentAnswer ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.studentAnswer}</p> : <span />}<span className={`text-[10px] font-bold italic ${inputData.studentAnswer.length > MAX_ANSWER_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>{inputData.studentAnswer.length}/{MAX_ANSWER_LENGTH}</span></div>
-                      </div>
-                      <button onClick={handleGrade} disabled={loading || isSubmitting.current} className={`relative w-full font-black uppercase tracking-widest py-4 md:py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
-                        <AnimatePresence mode="wait">{loading ? <motion.div key="l" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="flex items-center gap-2"><BrainCircuit className="animate-spin" size={20} /> <span>{t('GRADING_PROCESSING')}</span></motion.div> : <motion.div key="s" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex items-center gap-2"><Send size={18} /> <span>{t('GRADING_ANALYZE_BTN')}</span></motion.div>}</AnimatePresence>
-                      </button>
+                    <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2 italic uppercase tracking-tighter"><Sparkles className="text-blue-500" size={20} /> {t('GRADING_TASK_DETAILS')}</h2>
+
+                    {/* ── Mode tabs ── */}
+                    <div className="flex gap-1 mb-6 p-1 bg-slate-100 rounded-xl">
+                      {[
+                        { key: 'text', label: t('GRADING_TAB_TEXT'), icon: <Send size={11} /> },
+                        { key: 'image', label: t('GRADING_TAB_PHOTO'), icon: <Camera size={11} /> },
+                        { key: 'pdf', label: t('GRADING_TAB_PDF'), icon: <FileImage size={11} /> },
+                      ].map(tab => (
+                        <button key={tab.key} onClick={() => { setGradingMode(tab.key); setSelectedFile(null); setFilePreview(null); setIsCameraOpen(false); setResult(null); setError(null); }}
+                          className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${gradingMode === tab.key ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}>
+                          {tab.icon}{tab.label}
+                        </button>
+                      ))}
+                    </div>
+
+                    <div className="space-y-5">
+                      {/* ── TEXT MODE ── */}
+                      {gradingMode === 'text' && (<>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">{t('GRADING_EXAM_Q')}</label>
+                          <textarea value={inputData.questionText} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm md:text-base ${fieldErrors.questionText ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} rows="3" placeholder={t('GRADING_Q_PH')} maxLength={MAX_QUESTION_LENGTH} onChange={(e) => { setInputData({...inputData, questionText: e.target.value}); if (fieldErrors.questionText) setFieldErrors(p => ({...p, questionText: null})); }} />
+                          <div className="flex justify-between mt-1">{fieldErrors.questionText ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.questionText}</p> : <span />}<span className={`text-[10px] font-bold italic ${inputData.questionText.length > MAX_QUESTION_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>{inputData.questionText.length}/{MAX_QUESTION_LENGTH}</span></div>
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">{t('GRADING_STUDENT_ANS')}</label>
+                          <textarea value={inputData.studentAnswer} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all h-32 md:h-40 font-medium text-sm md:text-base ${fieldErrors.studentAnswer ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} placeholder={t('GRADING_A_PH')} maxLength={MAX_ANSWER_LENGTH} onChange={(e) => { setInputData({...inputData, studentAnswer: e.target.value}); if (fieldErrors.studentAnswer) setFieldErrors(p => ({...p, studentAnswer: null})); }} />
+                          <div className="flex justify-between mt-1">{fieldErrors.studentAnswer ? <p className="text-[10px] text-red-500 font-bold italic">{fieldErrors.studentAnswer}</p> : <span />}<span className={`text-[10px] font-bold italic ${inputData.studentAnswer.length > MAX_ANSWER_LENGTH * 0.9 ? 'text-red-400' : 'text-slate-300'}`}>{inputData.studentAnswer.length}/{MAX_ANSWER_LENGTH}</span></div>
+                        </div>
+                        <button onClick={handleGrade} disabled={loading || isSubmitting.current} className={`relative w-full font-black uppercase tracking-widest py-4 md:py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                          <AnimatePresence mode="wait">{loading ? <motion.div key="l" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="flex items-center gap-2"><BrainCircuit className="animate-spin" size={20} /> <span>{t('GRADING_PROCESSING')}</span></motion.div> : <motion.div key="s" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex items-center gap-2"><Send size={18} /> <span>{t('GRADING_ANALYZE_BTN')}</span></motion.div>}</AnimatePresence>
+                        </button>
+                      </>)}
+
+                      {/* ── IMAGE / PDF MODE ── */}
+                      {(gradingMode === 'image' || gradingMode === 'pdf') && (<>
+
+                        {/* Camera live view */}
+                        {isCameraOpen && (
+                          <div className="relative">
+                            <video ref={cameraRef} autoPlay playsInline className="w-full rounded-2xl border-2 border-blue-200" />
+                            <canvas ref={canvasRef} className="hidden" />
+                            <div className="flex gap-2 mt-3">
+                              <button onClick={capturePhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-black text-xs uppercase tracking-widest flex items-center justify-center gap-2 transition-all"><Camera size={14} /> {t('BTN_CAPTURE')}</button>
+                              <button onClick={stopCamera} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-5 py-3 rounded-xl font-black text-xs uppercase tracking-widest transition-all">{t('CANCEL')}</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Upload area */}
+                        {!isCameraOpen && (
+                          <div
+                            onClick={() => fileInputRef.current?.click()}
+                            className="group border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 rounded-2xl p-6 text-center cursor-pointer transition-all"
+                          >
+                            {filePreview ? (
+                              <img src={filePreview} alt="Parashikim" className="max-h-52 mx-auto rounded-xl object-contain" />
+                            ) : selectedFile ? (
+                              <div className="flex flex-col items-center gap-2 py-4">
+                                <FileImage size={32} className="text-blue-400" />
+                                <p className="text-sm font-bold text-blue-600 break-all">{selectedFile.name}</p>
+                                <p className="text-[10px] text-slate-400 font-bold uppercase">{t('PDF_READY_ANALYZE')}</p>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col items-center gap-3 py-4">
+                                <Upload size={32} className="text-slate-300 group-hover:text-blue-400 transition-colors" />
+                                <div>
+                                  <p className="text-[11px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500 transition-colors">
+                                    {gradingMode === 'pdf' ? t('UPLOAD_CLICK_PDF') : t('UPLOAD_CLICK_PHOTO')}
+                                  </p>
+                                  <p className="text-[9px] text-slate-300 mt-1 font-bold">{gradingMode === 'pdf' ? t('UPLOAD_SUPPORTS_PDF') : t('UPLOAD_SUPPORTS_IMG')}</p>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <input ref={fileInputRef} type="file" accept={gradingMode === 'pdf' ? 'application/pdf' : 'image/jpeg,image/png,image/webp'} className="hidden" onChange={handleFileSelect} />
+
+                        {/* Camera button (only for image mode) */}
+                        {gradingMode === 'image' && !isCameraOpen && !selectedFile && (
+                          <button onClick={openCamera} className="w-full flex items-center justify-center gap-2 py-3 border-2 border-slate-200 hover:border-blue-400 hover:text-blue-500 rounded-xl font-black text-xs uppercase tracking-widest text-slate-400 transition-all">
+                            <Camera size={15} /> {t('BTN_OPEN_CAMERA')}
+                          </button>
+                        )}
+
+                        {/* Remove selected file */}
+                        {selectedFile && !isCameraOpen && (
+                          <button onClick={() => { setSelectedFile(null); setFilePreview(null); }} className="w-full text-[10px] font-black uppercase text-red-400 hover:text-red-500 transition-colors py-1">
+                            ✕ {t('BTN_REMOVE_FILE')}
+                          </button>
+                        )}
+
+                        {/* Optional rubric */}
+                        <div>
+                          <label className="block text-[10px] font-black text-slate-400 uppercase mb-2 italic">{t('GRADING_RUBRIC_OPT')}</label>
+                          <input type="text" value={inputData.rubric} onChange={(e) => setInputData({...inputData, rubric: e.target.value})} className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm font-medium outline-none focus:ring-2 focus:ring-blue-500 transition-all" placeholder={t('GRADING_RUBRIC_PH')} />
+                        </div>
+
+                        {/* Analyze button */}
+                        <button onClick={handleImageGrade} disabled={loading || isSubmitting.current || !selectedFile} className={`relative w-full font-black uppercase tracking-widest py-4 md:py-5 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current || !selectedFile ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>
+                          <AnimatePresence mode="wait">{loading ? <motion.div key="l" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: -20, opacity: 0 }} className="flex items-center gap-2"><BrainCircuit className="animate-spin" size={20} /> <span>{t('GRADING_PROCESSING')}</span></motion.div> : <motion.div key="s" initial={{ y: 20, opacity: 0 }} animate={{ y: 0, opacity: 1 }} className="flex items-center gap-2">{gradingMode === 'pdf' ? <FileImage size={18} /> : <Camera size={18} />}<span>{gradingMode === 'pdf' ? t('GRADING_ANALYZE_PDF') : t('GRADING_ANALYZE_PHOTO')}</span></motion.div>}</AnimatePresence>
+                        </button>
+                      </>)}
                     </div>
                   </section>
                   <section className="bg-slate-900 text-white p-6 md:p-8 rounded-3xl shadow-2xl min-h-[400px] md:min-h-[500px] relative overflow-hidden flex flex-col justify-center border-4 border-slate-800">
@@ -1433,27 +1765,101 @@ const renderedProfileModal = useMemo(() => (
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-8">
                     <div className="lg:col-span-4">
-                      <form onSubmit={handleExamGenerate} className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200 shadow-sm space-y-6 lg:sticky lg:top-8">
-                        <div className="flex items-center gap-3 mb-2"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600"><Target size={20} /></div><h2 className="text-lg font-black text-slate-600 uppercase tracking-tighter italic">{t('EXAMS_CONFIG')}</h2></div>
-                        <div className="space-y-5">
-                          <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_PROFESSOR')}</label><div className="relative"><User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input type="text" placeholder={t('EXAMS_FULL_NAME')} className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.professorName} onChange={(e) => setExamFormData({...examFormData, professorName: e.target.value})} required /></div></div>
-                          <div className="space-y-4"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_SUBJECT_DETAILS')}</label><input type="text" placeholder={t('EXAMS_SUBJECT_NAME')} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.subject} onChange={(e) => setExamFormData({...examFormData, subject: e.target.value})} required /><input type="text" placeholder={t('EXAMS_TOPIC')} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.topic} onChange={(e) => setExamFormData({...examFormData, topic: e.target.value})} required /></div>
-                          <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_LEVEL')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.level} onChange={(e) => setExamFormData({...examFormData, level: e.target.value})}><option value="Fillore">{t('EXAMS_LVL_ELEMENTARY')}</option><option value="Mesme">{t('EXAMS_LVL_HIGH')}</option><option value="Fakultet">{t('EXAMS_LVL_UNIV')}</option></select></div><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_DIFFICULTY')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.difficulty} onChange={(e) => setExamFormData({...examFormData, difficulty: e.target.value})}><option value="Easy">{t('EXAMS_EASY')}</option><option value="Medium">{t('EXAMS_MEDIUM')}</option><option value="Hard">{t('EXAMS_HARD')}</option></select></div></div>
-                          <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_NUM_Q')}</label><input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none" value={examFormData.numQuestions} onChange={(e) => setExamFormData({...examFormData, numQuestions: e.target.value})} /></div><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_TYPE')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.type} onChange={(e) => setExamFormData({...examFormData, type: e.target.value})}><option value="multiple-choice">{t('EXAMS_MULTIPLE')}</option><option value="open-ended">{t('EXAMS_WRITTEN')}</option><option value="mixed">{t('EXAMS_MIXED')}</option></select></div></div>
-                          <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_EXTRA')}</label><textarea placeholder={t('EXAMS_EXTRA_PH')} className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 font-medium text-sm text-slate-600 min-h-[100px] resize-none" value={examFormData.extraInfo} onChange={(e) => setExamFormData({...examFormData, extraInfo: e.target.value})} /></div>
+                      <form onSubmit={handleExamGenerate} className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200 shadow-sm space-y-5 lg:sticky lg:top-8">
+                        <div className="flex items-center gap-3"><div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600"><Target size={20} /></div><h2 className="text-lg font-black text-slate-600 uppercase tracking-tighter italic">{t('EXAMS_CONFIG')}</h2></div>
+
+                        {/* ── Mode toggle ── */}
+                        <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+                          <button type="button" onClick={() => { setExamMode('manual'); setExamMatFile(null); setExamMatPreview(null); setExamMatCamera(false); }} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${examMode === 'manual' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><FileText size={11} /> Manual</button>
+                          <button type="button" onClick={() => { setExamMode('material'); setExamMatFile(null); setExamMatPreview(null); }} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${examMode === 'material' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><Upload size={11} /> {t('FROM_MATERIAL')}</button>
                         </div>
-                        <button type="submit" disabled={examLoading} className="w-full bg-slate-700 text-white py-6 rounded-3xl font-black uppercase tracking-[0.2em] text-xs shadow-2xl hover:bg-blue-600 transition-all disabled:opacity-50 flex items-center justify-center gap-3 group">{examLoading ? <Loader2 className="animate-spin" size={20} /> : <Sparkles size={20} className="text-blue-400 group-hover:scale-125 transition-transform" />}{examLoading ? t('EXAMS_GENERATING') : t('EXAMS_GENERATE_BTN')}</button>
+
+                        {/* ── MANUAL MODE ── */}
+                        {examMode === 'manual' && (
+                          <div className="space-y-5">
+                            <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_PROFESSOR')}</label><div className="relative"><User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={18} /><input type="text" placeholder={t('EXAMS_FULL_NAME')} className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.professorName} onChange={(e) => setExamFormData({...examFormData, professorName: e.target.value})} required /></div></div>
+                            <div className="space-y-4"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_SUBJECT_DETAILS')}</label><input type="text" placeholder={t('EXAMS_SUBJECT_NAME')} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.subject} onChange={(e) => setExamFormData({...examFormData, subject: e.target.value})} required /><input type="text" placeholder={t('EXAMS_TOPIC')} className="w-full px-5 py-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.topic} onChange={(e) => setExamFormData({...examFormData, topic: e.target.value})} required /></div>
+                            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_LEVEL')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.level} onChange={(e) => setExamFormData({...examFormData, level: e.target.value})}><option value="Fillore">{t('EXAMS_LVL_ELEMENTARY')}</option><option value="Mesme">{t('EXAMS_LVL_HIGH')}</option><option value="Fakultet">{t('EXAMS_LVL_UNIV')}</option></select></div><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_DIFFICULTY')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.difficulty} onChange={(e) => setExamFormData({...examFormData, difficulty: e.target.value})}><option value="Easy">{t('EXAMS_EASY')}</option><option value="Medium">{t('EXAMS_MEDIUM')}</option><option value="Hard">{t('EXAMS_HARD')}</option></select></div></div>
+                            <div className="grid grid-cols-2 gap-4"><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_NUM_Q')}</label><input type="number" className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none" value={examFormData.numQuestions} onChange={(e) => setExamFormData({...examFormData, numQuestions: e.target.value})} /></div><div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_TYPE')}</label><select className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.type} onChange={(e) => setExamFormData({...examFormData, type: e.target.value})}><option value="multiple-choice">{t('EXAMS_MULTIPLE')}</option><option value="open-ended">{t('EXAMS_WRITTEN')}</option><option value="mixed">{t('EXAMS_MIXED')}</option></select></div></div>
+                            <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_EXTRA')}</label><textarea placeholder={t('EXAMS_EXTRA_PH')} className="w-full p-5 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-4 focus:ring-blue-500/5 font-medium text-sm text-slate-600 min-h-[80px] resize-none" value={examFormData.extraInfo} onChange={(e) => setExamFormData({...examFormData, extraInfo: e.target.value})} /></div>
+                          </div>
+                        )}
+
+                        {/* ── MATERIAL MODE ── */}
+                        {examMode === 'material' && (
+                          <div className="space-y-4">
+                            <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest bg-blue-50 px-3 py-2 rounded-xl">{t('EXAM_MATERIAL_HINT')}</p>
+
+                            {/* Camera view */}
+                            {examMatCamera && (
+                              <div>
+                                <video ref={examCameraRef} autoPlay playsInline className="w-full rounded-2xl border-2 border-blue-200" />
+                                <canvas ref={examCanvasRef} className="hidden" />
+                                <div className="flex gap-2 mt-2">
+                                  <button type="button" onClick={captureExamPhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 transition-all"><Camera size={13} /> {t('BTN_CAPTURE')}</button>
+                                  <button type="button" onClick={stopExamCamera} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black text-xs uppercase transition-all">{t('CANCEL')}</button>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Upload area */}
+                            {!examMatCamera && (
+                              <div onClick={() => examFileInputRef.current?.click()} className="group border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 rounded-2xl p-5 text-center cursor-pointer transition-all">
+                                {examMatPreview ? <img src={examMatPreview} alt="" className="max-h-44 mx-auto rounded-xl object-contain" />
+                                : examMatFile ? <div className="py-3 flex flex-col items-center gap-2"><FileImage size={28} className="text-blue-400" /><p className="text-xs font-bold text-blue-600">{examMatFile.name}</p></div>
+                                : <div className="py-4 flex flex-col items-center gap-2"><Upload size={28} className="text-slate-300 group-hover:text-blue-400 transition-colors" /><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500">{t('UPLOAD_PHOTO_OR_PDF')}</p></div>}
+                              </div>
+                            )}
+                            <input ref={examFileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleExamMatFileSelect} />
+
+                            {!examMatCamera && !examMatFile && (
+                              <button type="button" onClick={openExamCamera} className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-slate-200 hover:border-blue-400 hover:text-blue-500 rounded-xl font-black text-xs uppercase text-slate-400 transition-all"><Camera size={13} /> {t('BTN_OPEN_CAMERA')}</button>
+                            )}
+                            {examMatFile && !examMatCamera && (
+                              <button type="button" onClick={() => { setExamMatFile(null); setExamMatPreview(null); }} className="w-full text-[10px] font-black uppercase text-red-400 hover:text-red-500 py-1">✕ {t('BTN_REMOVE_MATERIAL')}</button>
+                            )}
+
+                            {/* Config fields still needed */}
+                            <div className="space-y-2 pt-1"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_PROFESSOR')}</label><div className="relative"><User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} /><input type="text" placeholder={t('EXAMS_FULL_NAME')} className="w-full pl-11 pr-4 py-3.5 bg-slate-50 border border-slate-100 rounded-2xl outline-none focus:ring-2 focus:ring-blue-500/10 focus:border-blue-500 font-bold text-sm text-slate-600 transition-all" value={examFormData.professorName} onChange={(e) => setExamFormData({...examFormData, professorName: e.target.value})} /></div></div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_LEVEL')}</label><select className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.level} onChange={(e) => setExamFormData({...examFormData, level: e.target.value})}><option value="Fillore">{t('EXAMS_LVL_ELEMENTARY')}</option><option value="Mesme">{t('EXAMS_LVL_HIGH')}</option><option value="Fakultet">{t('EXAMS_LVL_UNIV')}</option></select></div>
+                              <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_DIFFICULTY')}</label><select className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.difficulty} onChange={(e) => setExamFormData({...examFormData, difficulty: e.target.value})}><option value="Easy">{t('EXAMS_EASY')}</option><option value="Medium">{t('EXAMS_MEDIUM')}</option><option value="Hard">{t('EXAMS_HARD')}</option></select></div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_NUM_Q')}</label><input type="number" min="1" max="20" className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none" value={examFormData.numQuestions} onChange={(e) => setExamFormData({...examFormData, numQuestions: e.target.value})} /></div>
+                              <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_TYPE')}</label><select className="w-full p-3.5 bg-slate-50 border border-slate-100 rounded-2xl font-bold text-sm text-slate-600 outline-none cursor-pointer" value={examFormData.type} onChange={(e) => setExamFormData({...examFormData, type: e.target.value})}><option value="multiple-choice">{t('EXAMS_MULTIPLE')}</option><option value="open-ended">{t('EXAMS_WRITTEN')}</option><option value="mixed">{t('EXAMS_MIXED')}</option></select></div>
+                            </div>
+                            <div className="space-y-2"><label className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 ml-1">{t('EXAMS_EXTRA')}</label><textarea placeholder="p.sh. Fokusohu te kapitulli 3..." className="w-full p-4 bg-slate-50 border border-slate-100 rounded-2xl outline-none font-medium text-sm text-slate-600 min-h-[70px] resize-none" value={examFormData.extraInfo} onChange={(e) => setExamFormData({...examFormData, extraInfo: e.target.value})} /></div>
+                          </div>
+                        )}
+
+                        <button type="submit" disabled={examLoading || (examMode === 'material' && !examMatFile)} className="w-full bg-slate-700 text-white py-5 rounded-3xl font-black uppercase tracking-[0.2em] text-xs shadow-2xl hover:bg-blue-600 transition-all disabled:opacity-40 flex items-center justify-center gap-3 group">{examLoading ? <Loader2 className="animate-spin" size={20} /> : examMode === 'material' ? <Upload size={18} className="text-blue-400 group-hover:scale-110 transition-transform" /> : <Sparkles size={20} className="text-blue-400 group-hover:scale-125 transition-transform" />}{examLoading ? t('EXAMS_GENERATING') : examMode === 'material' ? t('EXAM_FROM_MATERIAL_BTN') : t('EXAMS_GENERATE_BTN')}</button>
                       </form>
                     </div>
-                    <div className="lg:col-span-8 space-y-6">
-                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-2 px-2">
+                    <div className="lg:col-span-8 flex flex-col gap-4">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 px-2">
                         <div className="flex items-center gap-3"><div className="w-2 h-8 bg-blue-500/30 rounded-full"></div><h3 className="text-lg md:text-xl font-black text-slate-500 uppercase tracking-tighter italic">{t('EXAMS_PREVIEW')}</h3></div>
                         {examQuestions.length > 0 && (<div className="flex gap-2 w-full sm:w-auto"><button onClick={downloadExamWord} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"><FileText size={16} className="text-blue-500/50" /> Word</button><button onClick={downloadExamPDF} className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl font-black text-[10px] uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"><FileDown size={16} className="text-red-500/50" /> PDF</button></div>)}
                       </div>
-                      <div className="space-y-6">
-                        {examQuestions.map((q, idx) => (<div key={idx} className="bg-white p-6 md:p-8 rounded-[40px] border border-slate-200/60 shadow-sm"><div className="flex items-start gap-4 md:gap-5 mb-8"><span className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-slate-50 text-slate-400 rounded-2xl flex items-center justify-center font-black italic text-base md:text-lg shadow-sm border border-slate-100">{idx + 1}</span><h4 className="text-base md:text-xl font-bold text-slate-600 leading-relaxed pt-1 md:pt-2">{q.question}</h4></div>{q.options && (<div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-0 md:ml-16">{q.options.map((opt, i) => (<div key={i} className="flex items-center gap-4 p-4 bg-slate-50 rounded-[24px] border border-slate-100 hover:bg-white hover:border-blue-300 transition-all group cursor-default"><span className="w-8 h-8 bg-white group-hover:bg-slate-400 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 text-[10px] text-slate-400 font-black transition-all">{String.fromCharCode(65 + i)}</span><p className="text-xs font-bold text-slate-500">{opt}</p></div>))}</div>)}<div className="mt-8 pt-6 border-t border-slate-50 flex justify-end"><div className="px-4 py-2 bg-slate-50 text-slate-500 rounded-2xl border border-slate-100 flex items-center gap-3"><span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">{t('EXAMS_ANSWER')}</span><span className="font-bold text-xs">{q.answer}</span></div></div></div>))}
-                        {!examLoading && examQuestions.length === 0 && (<div className="bg-white rounded-[48px] border-4 border-dashed border-slate-100 p-10 md:p-20 text-center space-y-6"><div className="w-20 h-20 md:w-24 md:h-24 bg-slate-50 rounded-[32px] flex items-center justify-center mx-auto mb-4"><BrainCircuit size={40} className="text-slate-200" /></div><div><h3 className="text-xl md:text-2xl font-black text-slate-300 uppercase tracking-tighter italic">{t('EXAMS_READY')}</h3><p className="text-slate-300 font-bold text-xs md:text-sm mt-2">{t('EXAMS_FILL_CONFIG')}</p></div></div>)}
-                        {examLoading && (<div className="bg-white rounded-[48px] p-10 md:p-20 text-center space-y-8"><div className="relative w-20 h-20 md:w-24 md:h-24 mx-auto"><div className="absolute inset-0 border-8 border-slate-50 rounded-full"></div><div className="absolute inset-0 border-8 border-slate-400 rounded-full border-t-transparent animate-spin"></div></div><h3 className="text-xl md:text-2xl font-black text-slate-400 uppercase tracking-tighter italic">{t('EXAMS_PROCESSING')}</h3></div>)}
+                      <div className="bg-white dark:bg-slate-800 rounded-[40px] border border-slate-200/60 dark:border-slate-700 shadow-sm flex flex-col overflow-hidden min-h-[420px] max-h-[70vh] lg:max-h-none lg:min-h-[520px]">
+                        <div className="flex-1 overflow-y-auto p-6 md:p-8 space-y-6">
+                          {examQuestions.map((q, idx) => (<div key={idx} className="bg-slate-50 dark:bg-slate-700/40 p-6 md:p-8 rounded-[32px] border border-slate-100 dark:border-slate-600"><div className="flex items-start gap-4 md:gap-5 mb-8"><span className="flex-shrink-0 w-10 h-10 md:w-12 md:h-12 bg-white dark:bg-slate-600 text-slate-400 dark:text-slate-300 rounded-2xl flex items-center justify-center font-black italic text-base md:text-lg shadow-sm border border-slate-100 dark:border-slate-500">{idx + 1}</span><h4 className="text-base md:text-xl font-bold text-slate-600 dark:text-slate-200 leading-relaxed pt-1 md:pt-2">{q.question}</h4></div>{q.options && (<div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-0 md:ml-16">{q.options.map((opt, i) => (<div key={i} className="flex items-center gap-4 p-4 bg-white dark:bg-slate-700 rounded-[24px] border border-slate-100 dark:border-slate-600 hover:border-blue-300 transition-all group cursor-default"><span className="w-8 h-8 bg-slate-50 dark:bg-slate-600 group-hover:bg-slate-400 group-hover:text-white rounded-xl flex items-center justify-center border border-slate-200 dark:border-slate-500 text-[10px] text-slate-400 dark:text-slate-300 font-black transition-all">{String.fromCharCode(65 + i)}</span><p className="text-xs font-bold text-slate-500 dark:text-slate-300">{opt}</p></div>))}</div>)}<div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-600 flex justify-end"><div className="px-4 py-2 bg-white dark:bg-slate-700 text-slate-500 dark:text-slate-300 rounded-2xl border border-slate-100 dark:border-slate-600 flex items-center gap-3"><span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400">{t('EXAMS_ANSWER')}</span><span className="font-bold text-xs">{q.answer}</span></div></div></div>))}
+                          {!examLoading && examQuestions.length === 0 && (
+                            <div className="h-full flex items-center justify-center py-10">
+                              <div className="text-center space-y-4">
+                                <div className="w-20 h-20 bg-slate-50 dark:bg-slate-700 rounded-[32px] flex items-center justify-center mx-auto"><BrainCircuit size={36} className="text-slate-200 dark:text-slate-500" /></div>
+                                <h3 className="text-xl font-black text-slate-300 dark:text-slate-500 uppercase tracking-tighter italic">{t('EXAMS_READY')}</h3>
+                                <p className="text-slate-300 dark:text-slate-500 font-bold text-xs">{t('EXAMS_FILL_CONFIG')}</p>
+                              </div>
+                            </div>
+                          )}
+                          {examLoading && (
+                            <div className="h-full flex flex-col items-center justify-center space-y-6 py-10">
+                              <div className="relative w-20 h-20"><div className="absolute inset-0 border-8 border-slate-50 dark:border-slate-700 rounded-full"></div><div className="absolute inset-0 border-8 border-slate-400 rounded-full border-t-transparent animate-spin"></div></div>
+                              <h3 className="text-xl font-black text-slate-400 uppercase tracking-tighter italic">{t('EXAMS_PROCESSING')}</h3>
+                            </div>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1475,9 +1881,9 @@ const renderedProfileModal = useMemo(() => (
                       <button onClick={handleGenerateMaterials} disabled={loading || isSubmitting.current} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <Sparkles size={18} />}<span>{loading ? t('MAT_GENERATING') : t('MAT_GENERATE_BTN')}</span></button>
                     </div>
                   </section>
-                  <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[500px]">
-                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50"><h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><BookOpen size={18} /> {t('MAT_PREVIEW')}</h3>{generatedMaterial && (<div className="flex gap-2"><button onClick={handleDownloadMaterialWord} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"><Download size={14} /> Word</button><button onClick={handleDownloadMaterialPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"><FileText size={14} /> PDF</button></div>)}</div>
-                    <div className="p-8 flex-1 overflow-y-auto bg-white"><AnimatePresence mode="wait">{loading ? <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-40"><BrainCircuit size={48} className="text-blue-600 animate-bounce" /><p className="font-black uppercase italic text-xs tracking-widest animate-pulse">{t('MAT_AI_WRITING')}</p></div> : generatedMaterial ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="prose max-w-none"><div className="whitespace-pre-wrap text-slate-700 font-medium leading-relaxed italic border-l-4 border-blue-500 pl-6">{generatedMaterial}</div></motion.div> : <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-20"><BookOpen size={64} /><p className="font-black uppercase italic text-xs tracking-widest">{t('MAT_READY')}</p></div>}</AnimatePresence></div>
+                  <section className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col overflow-hidden min-h-[420px] max-h-[65vh] lg:max-h-none lg:min-h-[500px]">
+                    <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50"><h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-2"><BookOpen size={18} /> {t('MAT_PREVIEW')}</h3>{generatedMaterial && (<div className="flex gap-2"><button onClick={handleDownloadMaterialWord} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"><Download size={14} /> Word</button><button onClick={handleDownloadMaterialPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"><FileText size={14} /> PDF</button></div>)}</div>
+                    <div className="p-8 flex-1 overflow-y-auto bg-white dark:bg-slate-800"><AnimatePresence mode="wait">{loading ? <div className="h-full flex flex-col items-center justify-center space-y-4 opacity-40"><BrainCircuit size={48} className="text-blue-600 animate-bounce" /><p className="font-black uppercase italic text-xs tracking-widest animate-pulse">{t('MAT_AI_WRITING')}</p></div> : generatedMaterial ? <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="prose max-w-none"><div className="whitespace-pre-wrap text-slate-700 font-medium leading-relaxed italic border-l-4 border-blue-500 pl-6">{generatedMaterial}</div></motion.div> : <div className="h-full flex items-center justify-center p-6 md:p-10"><div className="w-full bg-white dark:bg-slate-800/50 rounded-[48px] border-4 border-dashed border-slate-100 dark:border-slate-700 p-10 md:p-20 text-center space-y-6"><div className="w-20 h-20 md:w-24 md:h-24 bg-slate-50 dark:bg-slate-700 rounded-[32px] flex items-center justify-center mx-auto mb-4"><BookOpen size={40} className="text-slate-200 dark:text-slate-500" /></div><div><h3 className="text-xl md:text-2xl font-black text-slate-300 dark:text-slate-500 uppercase tracking-tighter italic">{t('MAT_READY')}</h3><p className="text-slate-300 dark:text-slate-500 font-bold text-xs md:text-sm mt-2">{t('MAT_GENERATE_BTN')}</p></div></div></div>}</AnimatePresence></div>
                   </section>
                 </div>
               </motion.div>
@@ -1489,22 +1895,77 @@ const renderedProfileModal = useMemo(() => (
                 {homeworkApiError && (<motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="mb-6 p-4 bg-red-50 border border-red-200 text-red-600 rounded-2xl font-bold text-sm italic flex items-center gap-2"><AlertTriangle size={16} className="shrink-0" /><span>{homeworkApiError}</span><button onClick={() => setHomeworkApiError(null)} className="ml-auto text-red-400 hover:text-red-600 shrink-0"><X size={14}/></button></motion.div>)}
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                   <section className="lg:col-span-1 bg-white p-6 md:p-8 rounded-3xl shadow-sm border border-slate-100 h-fit lg:sticky lg:top-6">
-                    <h2 className="text-lg md:text-xl font-bold mb-6 flex items-center gap-2 italic uppercase tracking-tighter"><ClipboardList className="text-blue-500" size={20} /> {t('HW_GENERATE')}</h2>
+                    <h2 className="text-lg md:text-xl font-bold mb-4 flex items-center gap-2 italic uppercase tracking-tighter"><ClipboardList className="text-blue-500" size={20} /> {t('HW_GENERATE')}</h2>
+
+                    {/* ── Mode toggle ── */}
+                    <div className="flex gap-1 p-1 bg-slate-100 rounded-xl mb-5">
+                      <button type="button" onClick={() => { setHwMode('manual'); setHwMatFile(null); setHwMatPreview(null); setHwMatCamera(false); }} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${hwMode === 'manual' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><FileText size={11} /> Manual</button>
+                      <button type="button" onClick={() => { setHwMode('material'); setHwMatFile(null); setHwMatPreview(null); }} className={`flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all ${hwMode === 'material' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}><Upload size={11} /> {t('FROM_MATERIAL')}</button>
+                    </div>
+
                     <div className="space-y-5">
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> {t('MAT_SUBJECT')}</label><input type="text" placeholder={t('MAT_SUBJECT_PH')} value={homeworkInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, subject: e.target.value}); if (homeworkFieldErrors.subject) setHomeworkFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.subject}</p>}</div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> {t('MAT_TOPIC')}</label><input type="text" placeholder={t('MAT_TOPIC_PH')} value={homeworkInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, topic: e.target.value}); if (homeworkFieldErrors.topic) setHomeworkFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.topic}</p>}</div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> {t('MAT_LEVEL')}</label><input type="text" placeholder={t('HW_LEVEL_PH')} value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
-                      <div className="grid grid-cols-2 gap-4">
-                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> {t('HW_NUMBER')}</label><input type="number" min="1" max="10" value={homeworkInput.numTasks} onChange={(e) => { setHomeworkInput({...homeworkInput, numTasks: parseInt(e.target.value) || 1}); if (homeworkFieldErrors.numTasks) setHomeworkFieldErrors(p => ({...p, numTasks: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.numTasks ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} /></div>
-                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Target size={14}/> {t('HW_TYPE')}</label><select value={homeworkInput.type} onChange={(e) => setHomeworkInput({...homeworkInput, type: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm cursor-pointer"><option value="open">{t('HW_TYPE_OPEN')}</option><option value="practical">{t('HW_TYPE_PRACTICAL')}</option><option value="mixed">{t('HW_TYPE_MIXED')}</option></select></div>
-                      </div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Calendar size={14}/> {t('HW_DEADLINE')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL')}</span></label><input type="date" value={homeworkInput.deadline} onChange={(e) => setHomeworkInput({...homeworkInput, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
-                      <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Sparkles size={14}/> {t('HW_INSTRUCTIONS')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL_F')}</span></label><textarea placeholder={t('HW_INSTRUCTIONS_PH')} value={homeworkInput.extraInfo} onChange={(e) => setHomeworkInput({...homeworkInput, extraInfo: e.target.value})} rows="3" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm resize-none" /></div>
-                      <button onClick={handleGenerateHomework} disabled={loading || isSubmitting.current} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <ClipboardList size={18} />}<span>{loading ? t('HW_GENERATING') : t('HW_GENERATE_BTN')}</span></button>
+                      {/* ── MANUAL MODE ── */}
+                      {hwMode === 'manual' && (<>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><BookOpen size={14}/> {t('MAT_SUBJECT')}</label><input type="text" placeholder={t('MAT_SUBJECT_PH')} value={homeworkInput.subject} maxLength={MAX_SUBJECT_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, subject: e.target.value}); if (homeworkFieldErrors.subject) setHomeworkFieldErrors(p => ({...p, subject: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.subject && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.subject}</p>}</div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><FileText size={14}/> {t('MAT_TOPIC')}</label><input type="text" placeholder={t('MAT_TOPIC_PH')} value={homeworkInput.topic} maxLength={MAX_TOPIC_LENGTH} onChange={(e) => { setHomeworkInput({...homeworkInput, topic: e.target.value}); if (homeworkFieldErrors.topic) setHomeworkFieldErrors(p => ({...p, topic: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.topic ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />{homeworkFieldErrors.topic && <p className="text-[10px] text-red-500 font-bold italic mt-1">{homeworkFieldErrors.topic}</p>}</div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> {t('MAT_LEVEL')}</label><input type="text" placeholder={t('HW_LEVEL_PH')} value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> {t('HW_NUMBER')}</label><input type="number" min="1" max="10" value={homeworkInput.numTasks} onChange={(e) => { setHomeworkInput({...homeworkInput, numTasks: parseInt(e.target.value) || 1}); if (homeworkFieldErrors.numTasks) setHomeworkFieldErrors(p => ({...p, numTasks: null})); }} className={`w-full p-4 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm ${homeworkFieldErrors.numTasks ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} /></div>
+                          <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Target size={14}/> {t('HW_TYPE')}</label><select value={homeworkInput.type} onChange={(e) => setHomeworkInput({...homeworkInput, type: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm cursor-pointer"><option value="open">{t('HW_TYPE_OPEN')}</option><option value="practical">{t('HW_TYPE_PRACTICAL')}</option><option value="mixed">{t('HW_TYPE_MIXED')}</option></select></div>
+                        </div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Calendar size={14}/> {t('HW_DEADLINE')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL')}</span></label><input type="date" value={homeworkInput.deadline} onChange={(e) => setHomeworkInput({...homeworkInput, deadline: e.target.value})} className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Sparkles size={14}/> {t('HW_INSTRUCTIONS')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL_F')}</span></label><textarea placeholder={t('HW_INSTRUCTIONS_PH')} value={homeworkInput.extraInfo} onChange={(e) => setHomeworkInput({...homeworkInput, extraInfo: e.target.value})} rows="3" className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm resize-none" /></div>
+                        <button onClick={handleGenerateHomework} disabled={loading || isSubmitting.current} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <ClipboardList size={18} />}<span>{loading ? t('HW_GENERATING') : t('HW_GENERATE_BTN')}</span></button>
+                      </>)}
+
+                      {/* ── MATERIAL MODE ── */}
+                      {hwMode === 'material' && (<>
+                        <p className="text-[10px] font-bold text-blue-500 uppercase tracking-widest bg-blue-50 px-3 py-2 rounded-xl">{t('HW_MATERIAL_HINT')}</p>
+
+                        {/* Camera view */}
+                        {hwMatCamera && (
+                          <div>
+                            <video ref={hwCameraRef} autoPlay playsInline className="w-full rounded-2xl border-2 border-blue-200" />
+                            <canvas ref={hwCanvasRef} className="hidden" />
+                            <div className="flex gap-2 mt-2">
+                              <button type="button" onClick={captureHwPhoto} className="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-xl font-black text-xs uppercase flex items-center justify-center gap-2 transition-all"><Camera size={13} /> {t('BTN_CAPTURE')}</button>
+                              <button type="button" onClick={stopHwCamera} className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 py-3 rounded-xl font-black text-xs uppercase transition-all">{t('CANCEL')}</button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Upload area */}
+                        {!hwMatCamera && (
+                          <div onClick={() => hwFileInputRef.current?.click()} className="group border-2 border-dashed border-slate-200 hover:border-blue-400 hover:bg-blue-50/30 rounded-2xl p-5 text-center cursor-pointer transition-all">
+                            {hwMatPreview ? <img src={hwMatPreview} alt="" className="max-h-44 mx-auto rounded-xl object-contain" />
+                            : hwMatFile ? <div className="py-3 flex flex-col items-center gap-2"><FileImage size={28} className="text-blue-400" /><p className="text-xs font-bold text-blue-600">{hwMatFile.name}</p></div>
+                            : <div className="py-4 flex flex-col items-center gap-2"><Upload size={28} className="text-slate-300 group-hover:text-blue-400 transition-colors" /><p className="text-[10px] font-black uppercase tracking-widest text-slate-400 group-hover:text-blue-500">{t('UPLOAD_PHOTO_OR_PDF')}</p></div>}
+                          </div>
+                        )}
+                        <input ref={hwFileInputRef} type="file" accept="image/jpeg,image/png,image/webp,application/pdf" className="hidden" onChange={handleHwMatFileSelect} />
+
+                        {!hwMatCamera && !hwMatFile && (
+                          <button type="button" onClick={openHwCamera} className="w-full flex items-center justify-center gap-2 py-2.5 border-2 border-slate-200 hover:border-blue-400 hover:text-blue-500 rounded-xl font-black text-xs uppercase text-slate-400 transition-all"><Camera size={13} /> {t('BTN_OPEN_CAMERA')}</button>
+                        )}
+                        {hwMatFile && !hwMatCamera && (
+                          <button type="button" onClick={() => { setHwMatFile(null); setHwMatPreview(null); }} className="w-full text-[10px] font-black uppercase text-red-400 hover:text-red-500 py-1">✕ {t('BTN_REMOVE_MATERIAL')}</button>
+                        )}
+
+                        {/* Config */}
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Layers size={14}/> {t('MAT_LEVEL')}</label><input type="text" placeholder={t('HW_LEVEL_PH')} value={homeworkInput.level} onChange={(e) => setHomeworkInput({...homeworkInput, level: e.target.value})} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><ListOrdered size={14}/> {t('HW_NUMBER')}</label><input type="number" min="1" max="10" value={homeworkInput.numTasks} onChange={(e) => setHomeworkInput({...homeworkInput, numTasks: parseInt(e.target.value) || 1})} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                          <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Target size={14}/> {t('HW_TYPE')}</label><select value={homeworkInput.type} onChange={(e) => setHomeworkInput({...homeworkInput, type: e.target.value})} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm cursor-pointer"><option value="open">{t('HW_TYPE_OPEN')}</option><option value="practical">{t('HW_TYPE_PRACTICAL')}</option><option value="mixed">{t('HW_TYPE_MIXED')}</option></select></div>
+                        </div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Calendar size={14}/> {t('HW_DEADLINE')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL')}</span></label><input type="date" value={homeworkInput.deadline} onChange={(e) => setHomeworkInput({...homeworkInput, deadline: e.target.value})} className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-bold text-sm" /></div>
+                        <div><label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase mb-2 italic"><Sparkles size={14}/> {t('HW_INSTRUCTIONS')} <span className="text-slate-300 normal-case font-bold">{t('HW_OPTIONAL_F')}</span></label><textarea placeholder="p.sh. Fokusohu te tema e dytë..." value={homeworkInput.extraInfo} onChange={(e) => setHomeworkInput({...homeworkInput, extraInfo: e.target.value})} rows="2" className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-sm resize-none" /></div>
+
+                        <button onClick={handleHwFromMaterial} disabled={loading || isSubmitting.current || !hwMatFile} className={`w-full font-black uppercase tracking-widest py-4 rounded-2xl flex items-center justify-center gap-3 transition-all shadow-xl ${loading || isSubmitting.current || !hwMatFile ? 'bg-slate-100 text-slate-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200 active:scale-95'}`}>{loading ? <RefreshCw className="animate-spin" size={20} /> : <Upload size={18} />}<span>{loading ? t('HW_GENERATING') : t('HW_FROM_MATERIAL_BTN')}</span></button>
+                      </>)}
                     </div>
                   </section>
-                  <section className="lg:col-span-2 bg-white rounded-3xl shadow-sm border border-slate-100 flex flex-col overflow-hidden min-h-[600px]">
-                    <div className="p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50"><h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 flex items-center gap-2"><ClipboardList size={18} /> {t('HW_PREVIEW')}</h3>{generatedHomework && (<div className="flex gap-2"><button onClick={handleDownloadHomeworkWord} className="flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"><Download size={14} /> Word</button><button onClick={handleDownloadHomeworkPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"><FileText size={14} /> PDF</button></div>)}</div>
+                  <section className="lg:col-span-2 bg-white dark:bg-slate-800 rounded-3xl shadow-sm border border-slate-100 dark:border-slate-700 flex flex-col overflow-hidden min-h-[420px] max-h-[65vh] lg:max-h-none lg:min-h-[600px]">
+                    <div className="p-6 border-b border-slate-100 dark:border-slate-700 flex items-center justify-between bg-slate-50/50 dark:bg-slate-900/50"><h3 className="font-black uppercase italic text-sm tracking-widest text-slate-500 dark:text-slate-400 flex items-center gap-2"><ClipboardList size={18} /> {t('HW_PREVIEW')}</h3>{generatedHomework && (<div className="flex gap-2"><button onClick={handleDownloadHomeworkWord} className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-600 dark:text-slate-300 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"><Download size={14} /> Word</button><button onClick={handleDownloadHomeworkPDF} className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100"><FileText size={14} /> PDF</button></div>)}</div>
                     <div className="p-6 md:p-8 flex-1 overflow-y-auto">
                       <AnimatePresence mode="wait">
                         {loading && (<motion.div key="hw-loader" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="h-full flex flex-col items-center justify-center space-y-6 opacity-50"><div className="relative"><motion.div animate={{ rotate: 360 }} transition={{ duration: 3, repeat: Infinity, ease: "linear" }} className="w-16 h-16 border-4 border-blue-100 border-t-blue-500 rounded-full" /><div className="absolute inset-0 flex items-center justify-center"><ClipboardList className="text-blue-400" size={22} /></div></div><p className="font-black uppercase italic text-xs tracking-widest animate-pulse text-slate-400">{t('HW_AI_CREATING')}</p></motion.div>)}
@@ -1522,7 +1983,7 @@ const renderedProfileModal = useMemo(() => (
                             })}
                           </motion.div>
                         )}
-                        {!loading && !generatedHomework && (<motion.div key="hw-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex flex-col items-center justify-center space-y-4 opacity-20"><ClipboardList size={64} /><p className="font-black uppercase italic text-xs tracking-widest">{t('HW_FILL_FORM')}</p></motion.div>)}
+                        {!loading && !generatedHomework && (<motion.div key="hw-empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="h-full flex items-center justify-center p-6 md:p-10"><div className="w-full bg-white dark:bg-slate-800/50 rounded-[48px] border-4 border-dashed border-slate-100 dark:border-slate-700 p-10 md:p-20 text-center space-y-6"><div className="w-20 h-20 md:w-24 md:h-24 bg-slate-50 dark:bg-slate-700 rounded-[32px] flex items-center justify-center mx-auto mb-4"><ClipboardList size={40} className="text-slate-200 dark:text-slate-500" /></div><div><h3 className="text-xl md:text-2xl font-black text-slate-300 dark:text-slate-500 uppercase tracking-tighter italic">{t('HW_FILL_FORM')}</h3><p className="text-slate-300 dark:text-slate-500 font-bold text-xs md:text-sm mt-2">{t('HW_GENERATE_BTN')}</p></div></div></motion.div>)}
                       </AnimatePresence>
                     </div>
                   </section>
