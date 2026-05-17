@@ -20,8 +20,8 @@ async function createClient() {
 }
 
 // Llogaritja e mesatares dinamike
-function calcAverage(p1, p2, p3) {
-  const values = [p1, p2, p3].filter(v => v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v)));
+function calcAverage(p1, p2) {
+  const values = [p1, p2].filter(v => v !== null && v !== undefined && v !== '' && !isNaN(parseFloat(v)));
   if (values.length === 0) return null;
   const avg = values.reduce((a, b) => a + parseFloat(b), 0) / values.length;
   return parseFloat(avg.toFixed(1));
@@ -64,9 +64,9 @@ export async function POST(req) {
 
     const body = await req.json();
     // Këtu shtohen fushat e reja: class_group, student_id_number, email_contact, notes
-    const { subject, student_name, period_1, period_2, period_3, scale, absences, notes, class_group, student_id_number, email_contact } = body;
+    const { subject, student_name, period_1, period_2, scale, absences, notes, class_group, student_id_number, email_contact } = body;
 
-    const average = calcAverage(period_1, period_2, period_3);
+    const average = calcAverage(period_1, period_2);
 
     const { data, error } = await supabase
       .from('gradebook')
@@ -74,16 +74,15 @@ export async function POST(req) {
         user_id: user.id,
         subject: subject?.trim(),
         student_name: student_name?.trim(),
-        class_group: class_group?.trim() || null, // Fushe e re
-        student_id_number: student_id_number?.trim() || null, // Fushe e re
-        email_contact: email_contact?.trim() || null, // Fushe e re
+        class_group: class_group?.trim() || null,
+        student_id_number: student_id_number?.trim() || null,
+        email_contact: email_contact?.trim() || null,
         period_1: period_1 || null,
         period_2: period_2 || null,
-        period_3: period_3 || null,
         average,
         scale: scale || '1-10',
         absences: parseInt(absences) || 0,
-        notes: notes || '' // Fushe e re (ose perditesuar nese tashme ekzistonte si numer)
+        notes: notes || ''
       }])
       .select()
       .single();
@@ -105,25 +104,24 @@ export async function PUT(req) {
 
     const body = await req.json();
     // Këtu shtohen fushat e reja: class_group, student_id_number, email_contact, notes
-    const { id, subject, student_name, period_1, period_2, period_3, scale, absences, notes, class_group, student_id_number, email_contact } = body;
+    const { id, subject, student_name, period_1, period_2, scale, absences, notes, class_group, student_id_number, email_contact } = body;
 
-    const average = calcAverage(period_1, period_2, period_3);
+    const average = calcAverage(period_1, period_2);
 
     const { data, error } = await supabase
       .from('gradebook')
-      .update({ 
+      .update({
         subject: subject?.trim(),
         student_name: student_name?.trim(),
-        class_group: class_group?.trim() || null, // Fushe e re
-        student_id_number: student_id_number?.trim() || null, // Fushe e re
-        email_contact: email_contact?.trim() || null, // Fushe e re
+        class_group: class_group?.trim() || null,
+        student_id_number: student_id_number?.trim() || null,
+        email_contact: email_contact?.trim() || null,
         period_1: period_1 || null,
         period_2: period_2 || null,
-        period_3: period_3 || null,
         average,
         scale: scale || '1-10',
         absences: parseInt(absences) || 0,
-        notes: notes || '' // Fushe e re (ose perditesuar nese tashme ekzistonte si numer)
+        notes: notes || ''
       })
       .eq('id', id)
       .eq('user_id', user.id)

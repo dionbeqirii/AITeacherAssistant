@@ -206,8 +206,7 @@ export default function Dashboard() {
     email_contact: '',      
     period_1: '', 
     period_2: '', 
-    period_3: '',
-    notes: '',              
+        notes: '',              
     scale: '5-10'            
   });
 
@@ -218,10 +217,24 @@ export default function Dashboard() {
 
   // STATE I SHTUAR PËR MUNGESAT
   const [gradebookSubTab, setGradebookSubTab] = useState('grades');
+  // Teacher Config
+  const [teacherConfig, setTeacherConfig] = useState({ subjects: [], classes: [] });
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [configSubjects, setConfigSubjects] = useState([]);
+  const [configClasses, setConfigClasses] = useState([]);
+  const [configSubjectInput, setConfigSubjectInput] = useState('');
+  const [configClassInput, setConfigClassInput] = useState('');
+  const [configSaving, setConfigSaving] = useState(false);
   const [absencesFilter, setAbsencesFilter] = useState(null);
   const [absences, setAbsences] = useState([]);
   const [absencesLoading, setAbsencesLoading] = useState(false);
   const [absencesError, setAbsencesError] = useState(null);
+  const [absencesMonthFilter, setAbsencesMonthFilter] = useState(null);
+  const [justificationOpen, setJustificationOpen] = useState(null); // id e mungesës me input të hapur
+  const [justificationText, setJustificationText] = useState('');
+  const [absencesOverviewPeriod, setAbsencesOverviewPeriod] = useState('month'); // 'week' | 'month'
+  const [absencesOverviewMonth, setAbsencesOverviewMonth] = useState(new Date().getMonth());
+  const [absencesOverviewYear, setAbsencesOverviewYear] = useState(new Date().getFullYear());
   const [showAbsenceDropdown, setShowAbsenceDropdown] = useState(false);
   const absenceDropdownRef = useRef(null);
 
@@ -580,8 +593,20 @@ export default function Dashboard() {
   }, [router, t]);
 
   useEffect(() => {
-    if (activeTab === 'gradebook') fetchGradebook('all'); 
-  }, [activeTab, fetchGradebook]); 
+    if (activeTab === 'gradebook') {
+      fetchGradebook('all');
+      fetch('/api/v1/teacher-config', { credentials: 'include' })
+        .then(r => r.json())
+        .then(res => {
+          if (res.success) {
+            setTeacherConfig(res.data);
+            setConfigSubjects(res.data.subjects || []);
+            setConfigClasses(res.data.classes || []);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [activeTab, fetchGradebook]);
 
   useEffect(() => {
     if (activeTab === 'gradebook' && gradebookSubTab === 'absences') {
@@ -591,45 +616,136 @@ export default function Dashboard() {
 
   const handleRecordAbsence = async (reason) => {
     setShowAbsenceDropdown(false);
-    
-    const newAbsence = {
-      id: Date.now(),
-      student_name: absencesFilter,
-      date: new Date().toISOString(),
-      reason: reason
-    };
-    
-    setAbsences(prev => [newAbsence, ...prev]);
 
+    const date = new Date().toISOString();
+
+    // Përcakto lëndët për të cilat do të regjistrohet mungesa
+    const subjectsToRecord = gbFilterSubject === 'all'
+      ? [...new Set(gradebook.filter(g => g.student_name === absencesFilter).map(g => g.subject))]
+      : [gbFilterSubject];
+
+    // Krijo optimistic entries (një për çdo lëndë)
+    const tempEntries = subjectsToRecord.map(subject => ({
+      id: `temp-${Date.now()}-${subject}`,
+      student_name: absencesFilter,
+      date,
+      reason,
+      subject,
+    }));
+
+    setAbsences(prev => [...tempEntries, ...prev]);
+
+    // Dërgo një POST për çdo lëndë
+    for (const entry of tempEntries) {
+      try {
+        const res = await fetch('/api/v1/absences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            student_name: entry.student_name,
+            date: entry.date,
+            reason: entry.reason,
+            subject: entry.subject,
+          }),
+          credentials: 'include',
+        });
+
+        const result = await res.json();
+
+        if (result.success && result.data?.id) {
+          // Zëvendëso temp ID me UUID-in real
+          setAbsences(prev => prev.map(a => a.id === entry.id ? result.data : a));
+        } else {
+          setAbsences(prev => prev.filter(a => a.id !== entry.id));
+        }
+      } catch (err) {
+        console.error('Gabim gjatë ruajtjes së mungesës:', err);
+        setAbsences(prev => prev.filter(a => a.id !== entry.id));
+      }
+    }
+  };
+
+  const handleSaveJustification = async (absenceId) => {
+    const text = justificationText.trim();
+    // Optimistic UI
+    setAbsences(prev => prev.map(a => a.id === absenceId ? { ...a, justification: text } : a));
+    setJustificationOpen(null);
+    setJustificationText('');
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) return;
 
-      await fetch('/api/v1/absences', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${session.access_token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(newAbsence)
+      const res = await fetch('/api/v1/absences', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: absenceId, justification: text }),
+        credentials: 'include',
       });
+
+      const result = await res.json();
+      if (!result.success) {
+        console.error('Justification save failed:', result.error);
+        // rollback optimistic update
+        setAbsences(prev => prev.map(a => a.id === absenceId ? { ...a, justification: a.justification } : a));
+        fetchAbsences();
+      }
     } catch (err) {
-      console.error('Gabim gjatë ruajtjes së mungesës:', err);
+      console.error('Gabim gjatë ruajtjes së justifikimit:', err);
+      fetchAbsences();
+    }
+  };
+
+  const handleSaveConfig = async () => {
+    setConfigSaving(true);
+    try {
+      const res = await fetch('/api/v1/teacher-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ subjects: configSubjects, classes: configClasses }),
+      });
+      const result = await res.json();
+      if (result.success) {
+        setTeacherConfig({ subjects: configSubjects, classes: configClasses });
+        setShowConfigModal(false);
+      }
+    } catch (err) {
+      console.error('Config save error:', err);
+    } finally {
+      setConfigSaving(false);
+    }
+  };
+
+  const handleDeleteAbsence = async (absenceId) => {
+    // Optimistic UI — hiq menjëherë nga lista
+    setAbsences(prev => prev.filter(a => a.id !== absenceId));
+    try {
+      const res = await fetch(`/api/v1/absences?id=${absenceId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      const result = await res.json();
+      if (!result.success) {
+        console.error('Delete failed:', result.error);
+        fetchAbsences(); // rollback
+      }
+    } catch (err) {
+      console.error('Gabim gjatë fshirjes së mungesës:', err);
+      fetchAbsences();
     }
   };
 
   const gbSubjects = useMemo(() => {
-    const s = [...new Set(gradebook.map(g => g.subject))].sort((a, b) => a.localeCompare(b, i18n.language));
-    return s;
-  }, [gradebook, i18n.language]);
+    const fromGradebook = gradebook.map(g => g.subject).filter(Boolean);
+    const fromConfig = teacherConfig.subjects || [];
+    return [...new Set([...fromConfig, ...fromGradebook])].sort((a, b) => a.localeCompare(b, i18n.language));
+  }, [gradebook, teacherConfig.subjects, i18n.language]);
 
   const gbClasses = useMemo(() => {
-    const cleanedClassGroups = gradebook.map(g => g.class_group) 
-                                      .filter(Boolean)        
-                                      .map(c => c.trim());   
-    const uniqueClassGroups = [...new Set(cleanedClassGroups)];
-    return uniqueClassGroups.sort((a, b) => a.localeCompare(b, i18n.language));
-  }, [gradebook, i18n.language]);
+    const fromGradebook = gradebook.map(g => g.class_group).filter(Boolean).map(c => c.trim());
+    const fromConfig = teacherConfig.classes || [];
+    return [...new Set([...fromConfig, ...fromGradebook])].sort((a, b) => a.localeCompare(b, i18n.language));
+  }, [gradebook, teacherConfig.classes, i18n.language]);
 
   const gbUniqueStudents = useMemo(() => {
     const studentsMap = new Map();
@@ -691,7 +807,7 @@ export default function Dashboard() {
 
     const max = gbForm.scale === '1-5' ? 5 : 10;
     const min = gbForm.scale === '5-10' ? 5 : 1; 
-    ['period_1', 'period_2', 'period_3'].forEach((p) => {
+    ['period_1', 'period_2'].forEach((p) => {
       const val = gbForm[p];
       if (val !== '' && val !== null) {
         const num = parseFloat(val);
@@ -725,7 +841,7 @@ export default function Dashboard() {
         setGbShowForm(false); setGbEditingId(null);
         setGbForm({ 
             subject: '', student_name: '', class_group: '', student_id_number: '', email_contact: '', 
-            period_1: '', period_2: '', period_3: '', notes: '', scale: '5-10'  
+            period_1: '', period_2: '', notes: '', scale: '5-10'
         });
         setGbFormErrors({});
         fetchGradebook(gbFilterSubject);
@@ -745,9 +861,8 @@ export default function Dashboard() {
       class_group: student.class_group || '',        
       student_id_number: student.student_id_number || '', 
       email_contact: student.email_contact || '',      
-      period_1: student.period_1 ?? '', 
-      period_2: student.period_2 ?? '', 
-      period_3: student.period_3 ?? '',
+      period_1: student.period_1 ?? '',
+      period_2: student.period_2 ?? '',
       notes: student.notes || '',                  
       scale: student.scale || '5-10'                 
     });
@@ -775,8 +890,7 @@ export default function Dashboard() {
       email_contact: '',      
       period_1: '', 
       period_2: '', 
-      period_3: '',
-      notes: '',              
+            notes: '',              
       scale: '5-10'            
     }); 
     setGbFormErrors({}); 
@@ -803,9 +917,8 @@ export default function Dashboard() {
       doc.setFillColor(239, 246, 255); doc.rect(15, y - 4, pageWidth - 30, 8, 'F');
       doc.setFontSize(9); doc.setTextColor(71, 85, 105); doc.setFont("helvetica", "bold");
       doc.text(t('PDF_STUDENT'), 17, y);
-      doc.text(t('PDF_P1'), pageWidth - 75, y, { align: 'center' });
-      doc.text(t('PDF_P2'), pageWidth - 55, y, { align: 'center' });
-      doc.text(t('PDF_P3'), pageWidth - 35, y, { align: 'center' });
+      doc.text(t('PDF_P1'), pageWidth - 65, y, { align: 'center' });
+      doc.text(t('PDF_P2'), pageWidth - 40, y, { align: 'center' });
       doc.text(t('PDF_AVG'), pageWidth - 15, y, { align: 'right' });
       y += 7;
 
@@ -814,9 +927,8 @@ export default function Dashboard() {
         if (idx % 2 === 0) { doc.setFillColor(248, 250, 252); doc.rect(15, y - 4, pageWidth - 30, 7, 'F'); }
         doc.setFont("helvetica", "normal"); doc.setFontSize(9); doc.setTextColor(30, 41, 59);
         doc.text(s.student_name, 17, y);
-        doc.text(s.period_1 !== null ? String(s.period_1) : '—', pageWidth - 75, y, { align: 'center' });
-        doc.text(s.period_2 !== null ? String(s.period_2) : '—', pageWidth - 55, y, { align: 'center' });
-        doc.text(s.period_3 !== null ? String(s.period_3) : '—', pageWidth - 35, y, { align: 'center' });
+        doc.text(s.period_1 !== null ? String(s.period_1) : '—', pageWidth - 65, y, { align: 'center' });
+        doc.text(s.period_2 !== null ? String(s.period_2) : '—', pageWidth - 40, y, { align: 'center' });
         doc.setFont("helvetica", "bold"); doc.setTextColor(30, 58, 138);
         doc.text(s.average !== null ? String(s.average) : '—', pageWidth - 15, y, { align: 'right' });
         y += 7;
@@ -2002,33 +2114,48 @@ const renderedProfileModal = useMemo(() => (
                     <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-1">{t('GB_SUBTITLE')}</p>
                   </div>
                   <div className="flex flex-wrap justify-end gap-3">
-                    {gradebook.length > 0 && (
+                    {/* Butoni Konfiguro */}
+                    <button
+                      onClick={() => {
+                        setConfigSubjects(teacherConfig.subjects || []);
+                        setConfigClasses(teacherConfig.classes || []);
+                        setConfigSubjectInput('');
+                        setConfigClassInput('');
+                        setShowConfigModal(true);
+                      }}
+                      className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all border border-slate-200"
+                    >
+                      <Hash size={14} /> {i18n.language === 'sq' ? 'Konfiguro' : 'Configure'}
+                    </button>
+
+                    {gradebook.length > 0 && gradebookSubTab !== 'absences_overview' && (
                       <button onClick={handleGbExportPDF} className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-red-100">
                         <FileDown size={14} /> PDF
                       </button>
                     )}
-                    
-                    <button onClick={() => { 
-                        setGbShowForm(true); 
-                        setGbEditingId(null); 
-                        setGbAddMode('new');  
-                        setGbSelectedExistingStudent(null); 
-                        setGbForm({ 
-                            subject: '', 
-                            student_name: '', 
-                            class_group: '',        
-                            student_id_number: '',  
-                            email_contact: '',      
-                            period_1: '', 
-                            period_2: '', 
-                            period_3: '',
-                            notes: '',               
-                            scale: '5-10'            
-                        }); 
-                        setGbFormErrors({}); 
-                    }} className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
-                      <Plus size={16} /> {t('GB_ADD_STUDENT')}
-                    </button>
+
+                    {gradebookSubTab !== 'absences_overview' && (
+                      <button onClick={() => {
+                          setGbShowForm(true);
+                          setGbEditingId(null);
+                          setGbAddMode('new');
+                          setGbSelectedExistingStudent(null);
+                          setGbForm({
+                              subject: '',
+                              student_name: '',
+                              class_group: '',
+                              student_id_number: '',
+                              email_contact: '',
+                              period_1: '',
+                              period_2: '',
+                                                            notes: '',
+                              scale: '5-10'
+                          });
+                          setGbFormErrors({});
+                      }} className="flex-shrink-0 flex items-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-200 active:scale-95">
+                        <Plus size={16} /> {t('GB_ADD_STUDENT')}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2147,10 +2274,18 @@ const renderedProfileModal = useMemo(() => (
         
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Users size={14}/> {t('GB_CLASS_GROUP')} *</label>
-          <input type="text" placeholder={t('GB_CLASS_PH')} value={gbForm.class_group} onChange={(e) => { setGbForm({...gbForm, class_group: e.target.value}); if (gbFormErrors.class_group) setGbFormErrors(p => ({...p, class_group: null})); }} 
-            className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.class_group ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} 
-            readOnly={gbAddMode === 'existing' && !gbEditingId} 
-          />
+          {gbClasses.length > 0 && !(gbAddMode === 'existing' && !gbEditingId) ? (
+            <select
+              value={gbForm.class_group}
+              onChange={e => { setGbForm({...gbForm, class_group: e.target.value}); if (gbFormErrors.class_group) setGbFormErrors(p => ({...p, class_group: null})); }}
+              className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all cursor-pointer ${gbFormErrors.class_group ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+            >
+              <option value="">{i18n.language === 'sq' ? '— Zgjidh klasën —' : '— Select class —'}</option>
+              {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          ) : (
+            <input type="text" placeholder={t('GB_CLASS_PH')} value={gbForm.class_group} onChange={e => { setGbForm({...gbForm, class_group: e.target.value}); if (gbFormErrors.class_group) setGbFormErrors(p => ({...p, class_group: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.class_group ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} readOnly={gbAddMode === 'existing' && !gbEditingId} />
+          )}
           {gbFormErrors.class_group && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.class_group}</p>}
         </div>
         
@@ -2172,7 +2307,23 @@ const renderedProfileModal = useMemo(() => (
 
         <div>
           <label className="flex items-center gap-2 text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2 block italic"><Book size={14}/> {t('GB_SUBJECT')} *</label>
-          <input type="text" placeholder={t('GB_SUBJECT_PH')} value={gbForm.subject} onChange={(e) => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
+          {gbSubjects.length > 0 ? (
+            <select
+              value={gbForm.subject}
+              onChange={e => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }}
+              className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all cursor-pointer ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`}
+            >
+              <option value="">{i18n.language === 'sq' ? '— Zgjidh lëndën —' : '— Select subject —'}</option>
+              {gbSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          ) : (
+            <div className="space-y-2">
+              <input type="text" placeholder={t('GB_SUBJECT_PH')} value={gbForm.subject} onChange={e => { setGbForm({...gbForm, subject: e.target.value}); if (gbFormErrors.subject) setGbFormErrors(p => ({...p, subject: null})); }} className={`w-full p-3 bg-slate-50 border rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm transition-all ${gbFormErrors.subject ? 'border-red-400 bg-red-50' : 'border-slate-200'}`} />
+              <p className="text-[10px] text-orange-500 font-bold flex items-center gap-1">
+                <Hash size={11} /> {i18n.language === 'sq' ? 'Shto lëndë te Konfiguro për zgjedhje të shpejtë' : 'Add subjects in Configure for quick selection'}
+              </p>
+            </div>
+          )}
           {gbFormErrors.subject && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.subject}</p>}
         </div>
       </div>
@@ -2220,18 +2371,6 @@ const renderedProfileModal = useMemo(() => (
           {gbFormErrors.period_2 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_2}</p>}
         </div>
 
-        <div>
-          <label className="text-[10px] font-black text-slate-400 uppercase mb-2 block italic">{t('GB_PERIOD_3')}</label>
-          <input 
-            type="number" 
-            step="0.1"
-            placeholder={t('GB_GRADE_PH_3')}
-            value={gbForm.period_3} 
-            onChange={(e) => setGbForm({...gbForm, period_3: e.target.value})}
-            className={`w-full p-3 bg-white border rounded-xl font-bold text-sm outline-none transition-all ${gbFormErrors.period_3 ? 'border-red-400 bg-red-50' : 'border-slate-200 focus:ring-2 focus:ring-blue-500'}`}
-          />
-          {gbFormErrors.period_3 && <p className="text-[9px] text-red-500 font-bold mt-1">{gbFormErrors.period_3}</p>}
-        </div>
       </div>
 
 
@@ -2259,11 +2398,11 @@ const renderedProfileModal = useMemo(() => (
                     </AnimatePresence>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                      <div className="relative col-span-full"> 
+                      <div className="relative col-span-full">
                         <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300" size={16} />
                         <input type="text" placeholder={t('GB_SEARCH_PH')} value={gbSearchQuery} onChange={(e) => setGbSearchQuery(e.target.value)} className="w-full pl-10 pr-4 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 transition-all" />
                       </div>
-                      
+
                       {gbSubjects.length > 0 && (
                         <div className="relative">
                           <select value={gbFilterSubject} onChange={(e) => setGbFilterSubject(e.target.value)} className="appearance-none w-full pl-4 pr-10 py-3 bg-white border border-slate-200 rounded-2xl focus:ring-2 focus:ring-blue-500 outline-none font-bold text-sm text-slate-600 cursor-pointer transition-all">
@@ -2282,6 +2421,17 @@ const renderedProfileModal = useMemo(() => (
                           </select>
                           <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" size={16} />
                         </div>
+                      )}
+
+                      {/* Butoni Pasqyra e Mungesave */}
+                      {gradebook.length > 0 && (
+                        <button
+                          onClick={() => { setGradebookSubTab('absences_overview'); fetchAbsences(); }}
+                          className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-50 hover:bg-orange-100 border border-orange-200 hover:border-orange-300 text-orange-600 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all"
+                        >
+                          <Users size={15} />
+                          {i18n.language === 'sq' ? 'Pasqyra e Mungesave' : 'Absences Overview'}
+                        </button>
                       )}
                     </div>
 
@@ -2323,7 +2473,6 @@ const renderedProfileModal = useMemo(() => (
                                   <th className="text-left px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[150px]">{t('GB_COL_STUDENT')}</th>
                                   <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('GB_PERIOD_1')}</th>
                                   <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('GB_PERIOD_2')}</th>
-                                  <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('GB_PERIOD_3')}</th>
                                   <th className="text-center px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">{t('GB_COL_AVG')}</th>
                                   <th className="text-right px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[100px]">{t('GB_COL_ACTIONS')}</th>
                                 </tr>
@@ -2346,7 +2495,6 @@ const renderedProfileModal = useMemo(() => (
                                     </td>
                                     <td className="px-4 py-4 text-center"><GradeBadge value={student.period_1} scale={student.scale} /></td>
                                     <td className="px-4 py-4 text-center"><GradeBadge value={student.period_2} scale={student.scale} /></td>
-                                    <td className="px-4 py-4 text-center"><GradeBadge value={student.period_3} scale={student.scale} /></td>
                                     <td className="px-4 py-4 text-center">
                                       {student.average !== null ? (
                                         <span className="inline-flex items-center justify-center w-12 h-8 rounded-xl text-sm font-black bg-slate-900 text-white">{student.average}</span>
@@ -2395,7 +2543,7 @@ const renderedProfileModal = useMemo(() => (
                                   </div>
                                 </div>
 
-                                <div className="grid grid-cols-4 gap-2 mb-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100/50">
+                                <div className="grid grid-cols-3 gap-2 mb-4 bg-slate-50 p-2.5 rounded-2xl border border-slate-100/50">
                                   <div className="text-center flex flex-col items-center justify-center">
                                     <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">{t('GB_PERIOD_1')}</span>
                                     <GradeBadge value={student.period_1} scale={student.scale} />
@@ -2403,10 +2551,6 @@ const renderedProfileModal = useMemo(() => (
                                   <div className="text-center flex flex-col items-center justify-center">
                                     <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">{t('GB_PERIOD_2')}</span>
                                     <GradeBadge value={student.period_2} scale={student.scale} />
-                                  </div>
-                                  <div className="text-center flex flex-col items-center justify-center">
-                                    <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">{t('GB_PERIOD_3')}</span>
-                                    <GradeBadge value={student.period_3} scale={student.scale} />
                                   </div>
                                   <div className="text-center flex flex-col items-center justify-center border-l border-slate-200">
                                     <span className="block text-[9px] font-black text-slate-400 uppercase mb-1.5">{t('GB_COL_AVG')}</span>
@@ -2452,44 +2596,60 @@ const renderedProfileModal = useMemo(() => (
                 {/* VIEW PËR MUNGESAT */}
                 {gradebookSubTab === 'absences' && (
                   <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl border border-slate-100 shadow-sm mt-6 min-h-[400px] flex flex-col">
-                    <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-t-3xl">
+                    {/* Header */}
+                    <div className="px-6 py-4 border-b border-slate-100 flex flex-wrap items-center justify-between gap-3 bg-slate-50/50 rounded-t-3xl">
                       <div className="flex items-center gap-3">
                         <div className="w-2 h-6 bg-red-500 rounded-full"></div>
                         <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-sm md:text-base">{t('GB_ABSENCES_FOR', {name: absencesFilter})}</h3>
                       </div>
-                      <div className="flex items-center gap-3 relative">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {/* Month filter dropdown */}
+                        <select
+                          value={absencesMonthFilter ?? ''}
+                          onChange={e => setAbsencesMonthFilter(e.target.value === '' ? null : parseInt(e.target.value))}
+                          className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 outline-none cursor-pointer hover:border-blue-300 transition-all"
+                        >
+                          <option value="">{i18n.language === 'sq' ? 'Të gjithë muajt' : 'All months'}</option>
+                          {(i18n.language === 'sq'
+                            ? ['Janar','Shkurt','Mars','Prill','Maj','Qershor','Korrik','Gusht','Shtator','Tetor','Nëntor','Dhjetor']
+                            : ['January','February','March','April','May','June','July','August','September','October','November','December']
+                          ).map((m, i) => (
+                            <option key={i} value={i}>{m}</option>
+                          ))}
+                        </select>
+
+                        {/* Add absence button */}
                         <div className="relative" ref={absenceDropdownRef}>
-                          <button 
+                          <button
                             onClick={() => setShowAbsenceDropdown(!showAbsenceDropdown)}
                             className="flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-red-200 active:scale-95"
                           >
                             <Plus size={14} /> {t('GB_ABSENT_BTN')} <ChevronDown size={14} />
                           </button>
-                          
                           <AnimatePresence>
                             {showAbsenceDropdown && (
-                              <motion.div 
-                                initial={{ opacity: 0, y: 10 }} 
-                                animate={{ opacity: 1, y: 0 }} 
-                                exit={{ opacity: 0, y: 10 }} 
-                                className="absolute right-0 mt-2 w-40 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden"
+                              <motion.div
+                                initial={{ opacity: 0, y: 10 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                exit={{ opacity: 0, y: 10 }}
+                                className="absolute right-0 mt-2 w-44 bg-white border border-slate-100 rounded-2xl shadow-xl z-50 overflow-hidden"
                               >
-                                <button onClick={() => handleRecordAbsence(t('GB_WITH_REASON'))} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-50 border-b border-slate-50 transition-colors">{t('GB_WITH_REASON')}</button>
-                                <button onClick={() => handleRecordAbsence(t('GB_NO_REASON'))} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-slate-50 transition-colors">{t('GB_NO_REASON')}</button>
+                                <button onClick={() => handleRecordAbsence(t('GB_WITH_REASON'))} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-emerald-50 hover:text-emerald-600 border-b border-slate-50 transition-colors flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-emerald-400 shrink-0"></span>{t('GB_WITH_REASON')}</button>
+                                <button onClick={() => handleRecordAbsence(t('GB_NO_REASON'))} className="w-full text-left px-4 py-3 text-xs font-bold text-slate-600 hover:bg-red-50 hover:text-red-600 transition-colors flex items-center gap-2"><span className="w-2 h-2 rounded-full bg-red-400 shrink-0"></span>{t('GB_NO_REASON')}</button>
                               </motion.div>
                             )}
                           </AnimatePresence>
                         </div>
 
-                        <button 
-                          onClick={() => setGradebookSubTab('grades')} 
+                        <button
+                          onClick={() => { setGradebookSubTab('grades'); setAbsencesMonthFilter(null); }}
                           className="text-xs font-bold text-slate-500 bg-white border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all flex items-center gap-2"
                         >
                           <ChevronRight size={14} className="rotate-180" /> {t('GB_RETURN')}
                         </button>
                       </div>
                     </div>
-                    
+
                     <div className="p-6 md:p-8 flex-1 bg-white rounded-b-3xl">
                       {absencesLoading && absences.length === 0 ? (
                         <div className="text-center py-10">
@@ -2503,9 +2663,13 @@ const renderedProfileModal = useMemo(() => (
                       ) : (
                         <div className="space-y-3">
                           {(() => {
-                            const studentAbsences = absences.filter(a => a.student_name === absencesFilter);
-                            
-                            if (studentAbsences.length === 0) {
+                            const studentAbsences = absences
+                              .filter(a => a.student_name === absencesFilter)
+                              .filter(a => absencesMonthFilter === null || new Date(a.date).getMonth() === absencesMonthFilter);
+
+                            const allStudentAbsences = absences.filter(a => a.student_name === absencesFilter);
+
+                            if (allStudentAbsences.length === 0) {
                               return (
                                 <div className="text-center py-16 border-2 border-dashed border-slate-100 rounded-3xl">
                                   <Calendar size={48} className="mx-auto mb-4 text-slate-200" />
@@ -2515,22 +2679,147 @@ const renderedProfileModal = useMemo(() => (
                               );
                             }
 
-                            return studentAbsences.map(ab => (
-                              <div key={ab.id} className="flex justify-between items-center p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors">
-                                <div className="flex items-center gap-4">
-                                  <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-sm">
-                                    <Calendar size={16} className="text-slate-400" />
-                                  </div>
-                                  <div>
-                                    <span className="block font-black text-sm text-slate-700">{new Date(ab.date).toLocaleDateString(i18n.language === 'sq' ? 'sq-AL' : 'en-US')}</span>
-                                    <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">{t('GB_ABSENCE')}</span>
-                                  </div>
+                            if (studentAbsences.length === 0) {
+                              return (
+                                <div className="text-center py-16 border-2 border-dashed border-slate-100 rounded-3xl">
+                                  <Calendar size={48} className="mx-auto mb-4 text-slate-200" />
+                                  <p className="text-sm font-bold text-slate-500">
+                                    {i18n.language === 'sq' ? 'Asnjë mungesë për këtë muaj.' : 'No absences for this month.'}
+                                  </p>
                                 </div>
-                                <span className={`text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg ${ab.reason === t('GB_WITH_REASON') ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
-                                  {ab.reason}
-                                </span>
-                              </div>
-                            ));
+                              );
+                            }
+
+                            return (
+                              <>
+                                {/* Summary bar */}
+                                <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100 mb-4">
+                                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">
+                                    {i18n.language === 'sq' ? 'Totali' : 'Total'}:
+                                  </span>
+                                  <span className="text-sm font-black text-slate-700">{studentAbsences.length}</span>
+                                  <span className="mx-1 text-slate-200">|</span>
+                                  <span className="text-[10px] font-black text-emerald-500 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block"></span>
+                                    {studentAbsences.filter(a => a.reason === t('GB_WITH_REASON')).length} {t('GB_WITH_REASON')}
+                                  </span>
+                                  <span className="text-[10px] font-black text-red-500 flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-red-400 inline-block"></span>
+                                    {studentAbsences.filter(a => a.reason === t('GB_NO_REASON')).length} {t('GB_NO_REASON')}
+                                  </span>
+                                </div>
+
+                                {studentAbsences.map(ab => (
+                                  <motion.div
+                                    key={ab.id}
+                                    initial={{ opacity: 0, x: -10 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    exit={{ opacity: 0, x: 10 }}
+                                    layout
+                                    className="bg-slate-50 rounded-2xl border border-slate-100 hover:border-slate-200 transition-colors group overflow-hidden"
+                                  >
+                                    {/* Row kryesor */}
+                                    <div className="flex justify-between items-center p-4">
+                                      <div className="flex items-center gap-4">
+                                        <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center border border-slate-200 shadow-sm shrink-0">
+                                          <Calendar size={16} className="text-slate-400" />
+                                        </div>
+                                        <div>
+                                          <span className="block font-black text-sm text-slate-700">{new Date(ab.date).toLocaleDateString(i18n.language === 'sq' ? 'sq-AL' : 'en-US', { day: '2-digit', month: 'long', year: 'numeric' })}</span>
+                                          <div className="flex items-center gap-2 mt-0.5">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t('GB_ABSENCE')}</span>
+                                            {ab.subject && (
+                                              <span className="text-[9px] font-black bg-blue-50 text-blue-500 px-2 py-0.5 rounded-md uppercase tracking-wide">
+                                                {ab.subject}
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-2">
+                                        {/* Badge klikueshëm — hap justifikimin */}
+                                        <button
+                                          onClick={() => {
+                                            if (justificationOpen === ab.id) {
+                                              setJustificationOpen(null);
+                                              setJustificationText('');
+                                            } else {
+                                              setJustificationOpen(ab.id);
+                                              setJustificationText(ab.justification || '');
+                                            }
+                                          }}
+                                          className={`flex items-center gap-1.5 text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg shrink-0 transition-all cursor-pointer
+                                            ${justificationOpen === ab.id
+                                              ? 'bg-blue-100 text-blue-600 ring-2 ring-blue-300'
+                                              : ab.reason === t('GB_WITH_REASON')
+                                                ? 'bg-emerald-100 text-emerald-600 hover:bg-emerald-200'
+                                                : 'bg-red-100 text-red-600 hover:bg-red-200'
+                                            }`}
+                                        >
+                                          <MessageSquare size={11} />
+                                          {ab.reason}
+                                        </button>
+                                        <button
+                                          onClick={() => handleDeleteAbsence(ab.id)}
+                                          className="w-8 h-8 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                                          title={i18n.language === 'sq' ? 'Fshi mungesën' : 'Delete absence'}
+                                        >
+                                          <Trash2 size={14} />
+                                        </button>
+                                      </div>
+                                    </div>
+
+                                    {/* Justifikimi ekzistues */}
+                                    {ab.justification && justificationOpen !== ab.id && (
+                                      <div className="px-4 pb-3">
+                                        <div className="flex items-start gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+                                          <MessageSquare size={13} className="text-blue-400 mt-0.5 shrink-0" />
+                                          <p className="text-xs text-blue-700 font-medium leading-relaxed">{ab.justification}</p>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Input justifikimi */}
+                                    <AnimatePresence>
+                                      {justificationOpen === ab.id && (
+                                        <motion.div
+                                          initial={{ height: 0, opacity: 0 }}
+                                          animate={{ height: 'auto', opacity: 1 }}
+                                          exit={{ height: 0, opacity: 0 }}
+                                          transition={{ duration: 0.2 }}
+                                          className="overflow-hidden"
+                                        >
+                                          <div className="px-4 pb-4 pt-1 space-y-2">
+                                            <textarea
+                                              autoFocus
+                                              value={justificationText}
+                                              onChange={e => setJustificationText(e.target.value)}
+                                              placeholder={i18n.language === 'sq' ? 'Shkruaj justifikimin këtu... (p.sh. Sëmundje, vizitë mjekësore)' : 'Write justification here... (e.g. Illness, medical visit)'}
+                                              rows={2}
+                                              className="w-full px-4 py-3 bg-white border border-blue-200 rounded-xl text-sm text-slate-700 font-medium outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 resize-none transition-all placeholder:text-slate-300"
+                                            />
+                                            <div className="flex gap-2 justify-end">
+                                              <button
+                                                onClick={() => { setJustificationOpen(null); setJustificationText(''); }}
+                                                className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-400 hover:bg-slate-50 transition-all"
+                                              >
+                                                {t('CANCEL')}
+                                              </button>
+                                              <button
+                                                onClick={() => handleSaveJustification(ab.id)}
+                                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-md shadow-blue-100 flex items-center gap-2"
+                                              >
+                                                <Save size={12} /> {i18n.language === 'sq' ? 'Ruaj' : 'Save'}
+                                              </button>
+                                            </div>
+                                          </div>
+                                        </motion.div>
+                                      )}
+                                    </AnimatePresence>
+                                  </motion.div>
+                                ))}
+                              </>
+                            );
                           })()}
                         </div>
                       )}
@@ -2538,8 +2827,411 @@ const renderedProfileModal = useMemo(() => (
                   </motion.div>
                 )}
 
+                {/* ── PASQYRA E MUNGESAVE ─────────────────────────────────────────── */}
+                {gradebookSubTab === 'absences_overview' && (
+                  <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-5 mt-6">
+
+                    {/* Header card */}
+                    <div className="bg-white rounded-3xl border border-slate-100 shadow-sm p-5">
+                      <div className="flex flex-wrap items-center justify-between gap-4">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-orange-50 rounded-xl flex items-center justify-center text-orange-500"><Users size={20} /></div>
+                          <div>
+                            <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-base">
+                              {i18n.language === 'sq' ? 'Pasqyra e Mungesave' : 'Absences Overview'}
+                            </h3>
+                            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest">
+                              {i18n.language === 'sq' ? 'Të gjithë studentët' : 'All students'}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Week / Month toggle */}
+                          <div className="flex gap-1 p-1 bg-slate-100 rounded-xl">
+                            <button
+                              onClick={() => setAbsencesOverviewPeriod('week')}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${absencesOverviewPeriod === 'week' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              {i18n.language === 'sq' ? 'Javë' : 'Week'}
+                            </button>
+                            <button
+                              onClick={() => setAbsencesOverviewPeriod('month')}
+                              className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wider transition-all ${absencesOverviewPeriod === 'month' ? 'bg-white text-orange-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                            >
+                              {i18n.language === 'sq' ? 'Muaj' : 'Month'}
+                            </button>
+                          </div>
+
+                          {/* Month picker (only in month mode) */}
+                          {absencesOverviewPeriod === 'month' && (
+                            <select
+                              value={absencesOverviewMonth}
+                              onChange={e => setAbsencesOverviewMonth(parseInt(e.target.value))}
+                              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 outline-none cursor-pointer hover:border-orange-300 transition-all"
+                            >
+                              {(i18n.language === 'sq'
+                                ? ['Janar','Shkurt','Mars','Prill','Maj','Qershor','Korrik','Gusht','Shtator','Tetor','Nëntor','Dhjetor']
+                                : ['January','February','March','April','May','June','July','August','September','October','November','December']
+                              ).map((m, i) => <option key={i} value={i}>{m}</option>)}
+                            </select>
+                          )}
+
+                          {/* Subject filter */}
+                          {gbSubjects.length > 0 && (
+                            <select
+                              value={gbFilterSubject}
+                              onChange={e => setGbFilterSubject(e.target.value)}
+                              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 outline-none cursor-pointer hover:border-orange-300 transition-all"
+                            >
+                              <option value="all">{t('GB_ALL_SUBJECTS')}</option>
+                              {gbSubjects.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                          )}
+
+                          {/* Class filter */}
+                          {gbClasses.length > 0 && (
+                            <select
+                              value={gbFilterClass}
+                              onChange={e => setGbFilterClass(e.target.value)}
+                              className="px-3 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 outline-none cursor-pointer hover:border-orange-300 transition-all"
+                            >
+                              <option value="all">{t('GB_ALL_CLASSES')}</option>
+                              {gbClasses.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          )}
+
+                          <button
+                            onClick={() => setGradebookSubTab('grades')}
+                            className="px-4 py-2 bg-white border border-slate-200 rounded-xl text-[10px] font-black text-slate-500 uppercase tracking-widest hover:bg-slate-50 transition-all flex items-center gap-2"
+                          >
+                            <ChevronRight size={13} className="rotate-180" /> {t('GB_RETURN')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Table */}
+                    {absencesLoading ? (
+                      <div className="py-16 text-center bg-white rounded-3xl border border-slate-100">
+                        <Loader2 size={32} className="animate-spin text-orange-400 mx-auto mb-3" />
+                        <p className="text-[10px] font-black text-slate-400 uppercase italic tracking-widest animate-pulse">{t('GB_LOADING_ABSENCES')}</p>
+                      </div>
+                    ) : (
+                      (() => {
+                        // Filtro mungesat sipas periudhës
+                        const now = new Date();
+                        const weekStart = new Date(now); weekStart.setDate(now.getDate() - now.getDay() + 1); weekStart.setHours(0,0,0,0);
+                        const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 6); weekEnd.setHours(23,59,59,999);
+
+                        const filteredAbsences = absences.filter(a => {
+                          const d = new Date(a.date);
+                          const matchPeriod = absencesOverviewPeriod === 'week'
+                            ? d >= weekStart && d <= weekEnd
+                            : d.getMonth() === absencesOverviewMonth && d.getFullYear() === absencesOverviewYear;
+                          const matchSubject = gbFilterSubject === 'all' || a.subject === gbFilterSubject || !a.subject;
+                          return matchPeriod && matchSubject;
+                        });
+
+                        // Merr studentët unikë sipas filterave aktualë (subject + class) QË KAN MUNGESA
+                        const filteredStudents = gbUniqueStudents.filter(s => {
+                          const matchSubject = gbFilterSubject === 'all' || gradebook.some(g => g.student_name === s.student_name && g.subject === gbFilterSubject);
+                          const matchClass = gbFilterClass === 'all' || s.class_group === gbFilterClass;
+                          const hasAbsencesInPeriod = filteredAbsences.some(a => a.student_name === s.student_name);
+                          return matchSubject && matchClass && hasAbsencesInPeriod;
+                        });
+
+                        if (filteredStudents.length === 0) {
+                          return (
+                            <div className="py-20 text-center bg-white rounded-3xl border-2 border-dashed border-slate-100">
+                              <Calendar size={48} className="mx-auto mb-4 text-slate-200" />
+                              <p className="font-black uppercase italic text-xs tracking-widest text-slate-300">
+                                {i18n.language === 'sq'
+                                  ? absencesOverviewPeriod === 'week' ? 'Asnjë mungesë këtë javë.' : 'Asnjë mungesë këtë muaj.'
+                                  : absencesOverviewPeriod === 'week' ? 'No absences this week.' : 'No absences this month.'
+                                }
+                              </p>
+                            </div>
+                          );
+                        }
+
+                        // Grupo sipas klasës
+                        const byClass = {};
+                        filteredStudents.forEach(s => {
+                          const cls = s.class_group || (i18n.language === 'sq' ? 'Pa klasë' : 'No class');
+                          if (!byClass[cls]) byClass[cls] = [];
+                          byClass[cls].push(s);
+                        });
+
+                        return Object.entries(byClass).map(([cls, students]) => (
+                          <div key={cls} className="bg-white rounded-3xl border border-slate-100 shadow-sm overflow-hidden">
+                            {/* Group header */}
+                            <div className="px-6 py-3 bg-orange-50 border-b border-orange-100 flex items-center gap-3">
+                              <div className="w-2 h-5 bg-orange-400 rounded-full"></div>
+                              <span className="font-black text-orange-700 uppercase tracking-tighter italic text-sm">{cls}</span>
+                              <span className="text-[9px] font-black bg-orange-100 text-orange-500 px-2 py-0.5 rounded-lg uppercase">{students.length} {t('GB_STUDENTS_LBL')}</span>
+                            </div>
+
+                            {/* Column headers */}
+                            <div className="px-6 py-2 grid grid-cols-12 gap-2 border-b border-slate-50 bg-slate-50/50">
+                              <span className="col-span-4 text-[9px] font-black text-slate-400 uppercase tracking-widest">{i18n.language === 'sq' ? 'Studenti' : 'Student'}</span>
+                              <span className="col-span-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-center">{i18n.language === 'sq' ? 'Total' : 'Total'}</span>
+                              <span className="col-span-2 text-[9px] font-black text-emerald-500 uppercase tracking-widest text-center">{i18n.language === 'sq' ? 'Me arsye' : 'Justified'}</span>
+                              <span className="col-span-2 text-[9px] font-black text-red-400 uppercase tracking-widest text-center">{i18n.language === 'sq' ? 'Pa arsye' : 'Unjustified'}</span>
+                              <span className="col-span-2 text-[9px] font-black text-slate-400 uppercase tracking-widest text-right">{i18n.language === 'sq' ? 'E fundit' : 'Last'}</span>
+                            </div>
+
+                            {/* Student rows */}
+                            <div className="divide-y divide-slate-50">
+                              {students.map(s => {
+                                const sAbs = filteredAbsences.filter(a => a.student_name === s.student_name);
+                                const withReason = sAbs.filter(a => a.reason === t('GB_WITH_REASON')).length;
+                                const noReason = sAbs.filter(a => a.reason === t('GB_NO_REASON')).length;
+                                const lastAbs = sAbs[0] ? new Date(sAbs[0].date).toLocaleDateString(i18n.language === 'sq' ? 'sq-AL' : 'en-US', { day: '2-digit', month: 'short' }) : '—';
+                                const hasAbsences = sAbs.length > 0;
+
+                                return (
+                                  <div
+                                    key={s.student_name}
+                                    onClick={() => { setAbsencesFilter(s.student_name); setGradebookSubTab('absences'); fetchAbsences(); }}
+                                    className="px-4 md:px-6 py-3.5 grid grid-cols-12 gap-2 items-center hover:bg-slate-50 cursor-pointer transition-colors group"
+                                  >
+                                    <div className="col-span-4 flex items-center gap-3">
+                                      <div className={`w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black shrink-0 transition-colors ${hasAbsences ? 'bg-orange-100 text-orange-600 group-hover:bg-orange-200' : 'bg-slate-100 text-slate-400 group-hover:bg-slate-200'}`}>
+                                        {s.student_name?.charAt(0)?.toUpperCase()}
+                                      </div>
+                                      <span className="font-bold text-sm text-slate-700 truncate">{s.student_name}</span>
+                                    </div>
+                                    <div className="col-span-2 text-center">
+                                      {hasAbsences
+                                        ? <span className="text-sm font-black text-orange-500 bg-orange-50 px-2 py-0.5 rounded-lg">{sAbs.length}</span>
+                                        : <span className="text-sm font-black text-slate-300">0</span>
+                                      }
+                                    </div>
+                                    <div className="col-span-2 text-center">
+                                      {withReason > 0
+                                        ? <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-lg">{withReason}</span>
+                                        : <span className="text-xs text-slate-300 font-bold">—</span>
+                                      }
+                                    </div>
+                                    <div className="col-span-2 text-center">
+                                      {noReason > 0
+                                        ? <span className="text-xs font-black text-red-500 bg-red-50 px-2 py-0.5 rounded-lg">{noReason}</span>
+                                        : <span className="text-xs text-slate-300 font-bold">—</span>
+                                      }
+                                    </div>
+                                    <div className="col-span-2 flex items-center justify-end gap-2">
+                                      <span className="text-[10px] font-bold text-slate-400">{lastAbs}</span>
+                                      {hasAbsences && (
+                                        <button
+                                          onClick={e => {
+                                            e.stopPropagation();
+                                            sAbs.forEach(ab => handleDeleteAbsence(ab.id));
+                                          }}
+                                          className="w-7 h-7 flex items-center justify-center rounded-lg bg-white border border-slate-200 text-slate-300 hover:bg-red-50 hover:border-red-200 hover:text-red-500 transition-all opacity-0 group-hover:opacity-100 shrink-0"
+                                          title={i18n.language === 'sq' ? `Fshi ${sAbs.length} munges${sAbs.length === 1 ? 'ë' : 'a'}` : `Delete ${sAbs.length} absence${sAbs.length === 1 ? '' : 's'}`}
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      )}
+                                      <ChevronRight size={12} className="text-slate-300 group-hover:text-orange-400 transition-colors shrink-0" />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ));
+                      })()
+                    )}
+                  </motion.div>
+                )}
+
               </motion.div>
             )}
+
+            {/* ── MODAL KONFIGURIMIT ───────────────────────────────────────────────── */}
+            <AnimatePresence>
+              {showConfigModal && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm"
+                  onClick={e => { if (e.target === e.currentTarget) setShowConfigModal(false); }}
+                >
+                  <motion.div
+                    initial={{ scale: 0.95, opacity: 0, y: 20 }}
+                    animate={{ scale: 1, opacity: 1, y: 0 }}
+                    exit={{ scale: 0.95, opacity: 0, y: 20 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                    className="bg-white rounded-[32px] shadow-2xl w-full max-w-2xl overflow-hidden"
+                  >
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-8 py-6 border-b border-slate-100 bg-slate-50/60">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-blue-50 rounded-xl flex items-center justify-center text-blue-600"><Hash size={20} /></div>
+                        <div>
+                          <h2 className="font-black text-slate-700 uppercase tracking-tighter italic text-base">
+                            {i18n.language === 'sq' ? 'Konfiguro Lëndët & Klasat' : 'Configure Subjects & Classes'}
+                          </h2>
+                          <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest mt-0.5">
+                            {i18n.language === 'sq' ? 'Shto lëndët dhe klasat tuaja' : 'Add your subjects and classes'}
+                          </p>
+                        </div>
+                      </div>
+                      <button onClick={() => setShowConfigModal(false)} className="w-9 h-9 flex items-center justify-center rounded-xl bg-white border border-slate-200 text-slate-400 hover:text-slate-600 hover:bg-slate-50 transition-all">
+                        <X size={16} />
+                      </button>
+                    </div>
+
+                    {/* Body */}
+                    <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-6">
+
+                      {/* Lëndët */}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-6 bg-blue-500 rounded-full"></div>
+                          <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-sm">
+                            {i18n.language === 'sq' ? '📚 Lëndët e Mia' : '📚 My Subjects'}
+                          </h3>
+                        </div>
+
+                        {/* Input shto lëndë */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={configSubjectInput}
+                            onChange={e => setConfigSubjectInput(e.target.value)}
+                            onKeyDown={e => {
+                              if ((e.key === 'Enter' || e.key === ',') && configSubjectInput.trim()) {
+                                e.preventDefault();
+                                const val = configSubjectInput.trim();
+                                if (!configSubjects.includes(val)) setConfigSubjects(prev => [...prev, val]);
+                                setConfigSubjectInput('');
+                              }
+                            }}
+                            placeholder={i18n.language === 'sq' ? 'p.sh. Matematikë...' : 'e.g. Mathematics...'}
+                            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-blue-400/20 focus:border-blue-400 transition-all"
+                          />
+                          <button
+                            onClick={() => {
+                              const val = configSubjectInput.trim();
+                              if (val && !configSubjects.includes(val)) setConfigSubjects(prev => [...prev, val]);
+                              setConfigSubjectInput('');
+                            }}
+                            className="w-10 h-10 flex items-center justify-center bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-all shrink-0"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold -mt-2">
+                          {i18n.language === 'sq' ? 'Shtyp Enter ose + për të shtuar' : 'Press Enter or + to add'}
+                        </p>
+
+                        {/* Chips lëndët */}
+                        <div className="flex flex-wrap gap-2 min-h-[60px] p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                          {configSubjects.length === 0 && (
+                            <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest self-center mx-auto">
+                              {i18n.language === 'sq' ? 'Ende pa lëndë' : 'No subjects yet'}
+                            </span>
+                          )}
+                          {configSubjects.map((s, i) => (
+                            <span key={i} className="flex items-center gap-1.5 bg-blue-50 border border-blue-100 text-blue-700 text-xs font-black px-3 py-1.5 rounded-xl">
+                              {s}
+                              <button onClick={() => setConfigSubjects(prev => prev.filter((_, idx) => idx !== i))} className="text-blue-300 hover:text-red-500 transition-colors ml-0.5">
+                                <X size={11} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Klasat */}
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <div className="w-2 h-6 bg-emerald-500 rounded-full"></div>
+                          <h3 className="font-black text-slate-700 uppercase tracking-tighter italic text-sm">
+                            {i18n.language === 'sq' ? '🏫 Klasat / Grupet' : '🏫 Classes / Groups'}
+                          </h3>
+                        </div>
+
+                        {/* Input shto klasë */}
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={configClassInput}
+                            onChange={e => setConfigClassInput(e.target.value)}
+                            onKeyDown={e => {
+                              if ((e.key === 'Enter' || e.key === ',') && configClassInput.trim()) {
+                                e.preventDefault();
+                                const val = configClassInput.trim();
+                                if (!configClasses.includes(val)) setConfigClasses(prev => [...prev, val]);
+                                setConfigClassInput('');
+                              }
+                            }}
+                            placeholder={i18n.language === 'sq' ? 'p.sh. 10-A...' : 'e.g. 10-A...'}
+                            className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-emerald-400/20 focus:border-emerald-400 transition-all"
+                          />
+                          <button
+                            onClick={() => {
+                              const val = configClassInput.trim();
+                              if (val && !configClasses.includes(val)) setConfigClasses(prev => [...prev, val]);
+                              setConfigClassInput('');
+                            }}
+                            className="w-10 h-10 flex items-center justify-center bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all shrink-0"
+                          >
+                            <Plus size={16} />
+                          </button>
+                        </div>
+                        <p className="text-[10px] text-slate-400 font-bold -mt-2">
+                          {i18n.language === 'sq' ? 'Shtyp Enter ose + për të shtuar' : 'Press Enter or + to add'}
+                        </p>
+
+                        {/* Chips klasat */}
+                        <div className="flex flex-wrap gap-2 min-h-[60px] p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                          {configClasses.length === 0 && (
+                            <span className="text-[10px] text-slate-300 font-bold uppercase tracking-widest self-center mx-auto">
+                              {i18n.language === 'sq' ? 'Ende pa klasa' : 'No classes yet'}
+                            </span>
+                          )}
+                          {configClasses.map((c, i) => (
+                            <span key={i} className="flex items-center gap-1.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xs font-black px-3 py-1.5 rounded-xl">
+                              {c}
+                              <button onClick={() => setConfigClasses(prev => prev.filter((_, idx) => idx !== i))} className="text-emerald-300 hover:text-red-500 transition-colors ml-0.5">
+                                <X size={11} />
+                              </button>
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer */}
+                    <div className="px-8 py-5 border-t border-slate-100 bg-slate-50/40 flex items-center justify-between">
+                      <p className="text-[10px] text-slate-400 font-bold">
+                        {i18n.language === 'sq'
+                          ? `${configSubjects.length} lëndë · ${configClasses.length} klasa`
+                          : `${configSubjects.length} subjects · ${configClasses.length} classes`}
+                      </p>
+                      <div className="flex gap-3">
+                        <button onClick={() => setShowConfigModal(false)} className="px-5 py-2.5 bg-white border border-slate-200 rounded-xl text-[10px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all">
+                          {t('CANCEL')}
+                        </button>
+                        <button
+                          onClick={handleSaveConfig}
+                          disabled={configSaving}
+                          className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-100 flex items-center gap-2 disabled:opacity-50"
+                        >
+                          {configSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                          {i18n.language === 'sq' ? 'Ruaj Ndryshimet' : 'Save Changes'}
+                        </button>
+                      </div>
+                    </div>
+                  </motion.div>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* ── TIMER & STOPWATCH ───────────────────────────────────────────────── */}
             {activeTab === 'timer_soon' && (
