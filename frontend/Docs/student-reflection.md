@@ -1,135 +1,91 @@
-🎓 Student Reflection: AI Teacher Assistant – Case Study  
+🎓 Student Reflection: AI Teacher Assistant – Case Study
 Student: Dion Beqiri
 
 Project: AI Teacher Assistant (AI-Powered Education Platform)
 
-Repository: https://github.com/dionbeqirii/AITeacherAssistant  
+Repository: https://github.com/dionbeqirii/AITeacherAssistant
+
 Live URL: https://ai-teacher-assistant-db.vercel.app/
 
----
+1. Project Overview (Executive Summary)
+AI Teacher Assistant is an advanced web platform for teachers and educational institutions, built on Next.js 15 and Supabase. The primary goal is to automate the most time-consuming and repetitive parts of a teacher's workflow, integrating generative and visual AI technologies.
 
-## 1. Project Overview (Executive Summary)
+The platform provides a unified ecosystem for:
 
-AI Teacher Assistant është një platformë e avancuar web për profesorë dhe institucione arsimore, ndërtuar mbi Next.js 15 dhe Supabase. Qëllimi kryesor është të automatizojë pjesët më të lodhshme dhe më rutinore të punës së një profesori:
-- menaxhimin e regjistrit të notave,
-- Evidencën e mungesave.
-- gjenerimin e provimeve,
-- krijimin e materialeve mësimore,
-- dizajnimin e detyrave të shtëpisë me rubrika vlerësimi,
-- vlerësimin automatik të përgjigjeve (AI Grading)
+Managing gradebooks and tracking student absences.
 
-Në vend që profesori të mbështetet në Excel, Word dhe procese manuale, AI Teacher Assistant e kthen këtë në një **platformë të unifikuar** ku procesi i mësimdhënies, vlerësimit dhe evidencës bëhet më i shpejtë, më i strukturuar dhe më i matshëm.
+Generating exams and learning materials using AI.
 
----
+Designing homework assignments with grading rubrics.
 
-## 2. Technical Milestones & Challenges
+Automatic grading (AI Grading) through text and, most importantly, AI Vision grading via photos.
 
-Gjatë zhvillimit, projekti është fokusuar në disa shtylla teknike kryesore:
+Time management (Timer) in the classroom and real-time notifications.
 
-### a) Next.js 15 & SPA Architecture
+By moving away from Excel, Word, and manual processes, AI Teacher Assistant creates a structured, measurable, and faster teaching experience. With support for Dark/Light mode and Internationalization (i18n), the platform is designed to be accessible and user-friendly.
 
-- Implementova një **SPA-like Dashboard** ku të gjitha modulet (Dashboard, Gradebook, AI Grading, AI Exams, AI Materials, AI Homework) menaxhohen në një komponent të vetëm `Dashboard` me tabs dhe state në React.
-- Përdora App Router-in e Next.js 15 së bashku me komponentë “client” për të lejuar kalim të shpejtë mes moduleve pa reload të plotë, gjë që është kritike për një mjet që profesori e përdor gjatë orës.
+2. Technical Milestones & Challenges
+During development, the project focused on advancing technical pillars to provide a "next-gen" experience:
 
-### b) Supabase: Auth, Database & RLS
+a) Next.js 15 & SPA Architecture
+I implemented an SPA-like Dashboard where all modules (Dashboard, Gradebook, AI Grading, AI Exams, AI Materials, AI Homework, Timer) are managed within a single Dashboard component using React tabs and state.
 
-- **Supabase Auth** u përdor për login/registration të sigurt, duke lejuar që çdo profesor të ketë hapësirën e vet të të dhënave.
-- Projektova tabela reale për përdorim pedagogjik:
-  - `gradebook` për regjistrin e notave (me periudha dhe mesatare),
-  - `absences` për mungesat e studentëve,
-  - `conversations` dhe `messages` për historikun e AI Grading.
-- Implementova **Row-Level Security (RLS)** që siguron se çdo profesor sheh vetëm të dhënat e veta përmes kolonës `user_id`. Kjo është kritike për privatësi dhe siguri në një aplikacion edukativ.
+I used the Next.js 15 App Router alongside "client" components to allow seamless transitions between modules without full page reloads, which is critical for a tool used actively during class.
 
-### c) AI Integration (Groq – Llama 3.3 70B)
+b) Supabase: Auth, Database & RLS
+Supabase Auth was utilized for secure login/registration and session management.
 
-- Lidhja me Groq API u përdor për:
-  - vlerësimin automatik të përgjigjeve (score + feedback + strengths + weaknesses),
-  - gjenerimin e provimeve (pyetje + përgjigje),
-  - gjenerimin e materialeve mësimore,
-  - gjenerimin e detyrave të shtëpisë me rubrika vlerësimi.
-- Sfida ishte të dizajnoja **prompt-e të qëndrueshme**, që të kthejnë struktura të qarta JSON për t’u ruajtur dhe vizualizuar në UI (jo thjesht text i lirë).
+I designed a schema to support:
 
-### d) Gradebook & Absence Tracking
+gradebook (grades, periods, averages),
 
-- Ndërtova një modul modern **Regjistri i Notave**, me:
-  - shkallë notimi dinamike (1–10 / 1–5),
-  - tre periudha,
-  - mesatare studentore dhe mesatare klase për çdo lëndë,
-  - grupim të studentëve sipas lëndës,
-  - eksport profesional në PDF.
-- Shtova menaxhimin e **Mungesave**, me:
-  - lidhje logjike me studentët e gradebook-ut,
-  - ruajtje të datës dhe tipit të mungesës,
-  - filtrime për student të caktuar (p.sh. “Besart Islami – 26/04/2026”).
+absences (logical linkage with students and dates),
 
-### e) Error Handling, Offline State & Export
+notifications (history of actions).
 
-- Implementova kontroll të sesionit dhe error handling për Supabase dhe AI API, në mënyrë që problemi i autentikimit apo i rrjetit të trajtohet me mesazhe të qarta, jo me crash të UI.
-- Përdora:
-  - `jspdf` dhe `jspdf-autotable` për PDF,
-  - `docx` dhe `file-saver` për Word,
-  për të krijuar dokumente të përdorshme realisht nga profesorët (jo vetëm demo teknike).
+I implemented Row-Level Security (RLS) to ensure data privacy, guaranteeing that every teacher accesses only their own records via the user_id column.
 
----
+c) Advanced AI Integration (Vision & Generative)
+AI Vision Grading: A major technical milestone was the integration of Llama 3.2 Vision, allowing teachers to upload photos of handwritten assignments or use the camera directly. The system converts images to base64, processes them via AI, and returns structured feedback.
 
-## 3. Presentation Readiness
+Llama 3.3 70B: Used for generating exams and homework, ensuring responses are returned in structured JSON format for clean UI rendering.
 
-Projekti është i përgatitur për prezantimin final në këto aspekte:
+d) Utility & User Experience
+Timer: I implemented a dedicated module for managing class time (Countdown/Stopwatch).
 
-- **Demo Flow i menduar mirë:** Kam një flow 5–7 minutësh të strukturuar që fillon me Dashboard, kalon te Gradebook + Mungesat, dhe pastaj te AI Grading dhe gjenerimi i provimeve/materialeve/detyrave.
-- **Dokumentim i dedikuar:**  
-  - `docs/demo-plan.md` përshkruan saktë çka do të prezantoj, cilat pjesë teknike dhe çfarë kam testuar.
-  - README është përditësuar dhe flet edhe për Gradebook + Mungesat.
-- **Plan B i qartë:**  
-  - Nëse Live URL ka problem (Vercel/Supabase/API), kam gati:
-    - video demo,
-    - screenshots të flow-it kryesor,
-    - mundësinë për ta ngritur lokalisht.
+Notifications & UI: Added a real-time notification system and support for Dark/Light mode.
 
----
+i18n: The application supports dynamic language switching (Albanian/English) to cater to diverse users.
 
-## 4. Student Reflection
+3. Presentation Readiness
+The project is prepared for the final presentation:
 
-Ky projekt më ka ndihmuar të kaloj nga “thjesht të bëj një app që funksionon” në “të ndërtoj një mjet që ka kuptim në jetën reale të një profesori”.
+Demo Flow: A 5–7 minute structured flow covering the Dashboard, AI Vision grading, and exam generation.
 
-### Çfarë kam mësuar më shumë:
+Documentation: docs/demo-plan.md is fully updated.
 
-- **Të mendoj në mënyrë produkti, jo vetëm kodi.**  
-  Sa më shumë punoja me Gradebook-in dhe Mungesat, aq më shumë shihja se sa i rëndësishëm është UX për një profesor që ka kohë të kufizuar. Kjo më bëri të thjeshtoj disa flow-e dhe të shtoj veçori si kërkimi, filtrimi dhe eksporti në PDF.
+Plan B: A recorded demo video and screenshots are ready, along with the ability to run the project locally if network latency occurs.
 
-- **Menaxhimi i kompleksitetit në një komponent të madh (Dashboard).**  
-  `page.js` u bë një “orchestrator” i madh i shumë moduleve. Edhe pse funksionon, kjo më ka mësuar rëndësinë e ndarjes në komponentë më të vegjël dhe strukturës më modulare për projekte edhe më të mëdha.
+4. Student Reflection
+This project helped me transition from "building an app that works" to "building a tool that makes sense in a teacher's daily life."
 
-- **Integrimi i AI në mënyrë të përgjegjshme.**  
-  Për AI Grading, duhej ta balancoja “cool factor” të AI me faktin që ai mund të gabojë. Kjo është arsyeja pse kam përfshirë mesazhe paralajmëruese dhe e shoh AI-in si “asistent”, jo si autoritet absolut.
+What I learned most:
+Product Mindset: Implementing Camera/Vision grading showed me how crucial it is to reduce data entry time for end-users.
 
-- **Supabase në thellësi.**  
-  Nga auth bazik kalova te:
-  - RLS policies,
-  - menaxhimi i sesionit midis client dhe server (`@supabase/ssr`),
-  - trajtimi i problemeve si “Jo i autentikuar” përmes headers dhe Bearer tokens.  
-  Kjo më ka rritur shumë komfortin me ndërtimin e një backend-i modern pa pasur nevojë të shkruaj një server custom nga zero.
+Complexity Management: Handling features like Notifications and Timers taught me how important it is for an app to feel "alive" and interactive.
 
-### Çfarë do të bëja ndryshe nëse do ta filloja nga e para:
+Multimodal AI: Working with image OCR alongside text gave me a deeper understanding of modern APIs like Groq.
 
-- Do ta planifikoja strukturën e komponentëve më herët, në mënyrë që të mos kem një file kaq të madh për Dashboard-in.
-- Do të shtoja testime automatike për funksionet kryesore (p.sh. llogaritjen e mesatareve, validimin e notave, filtrimin e studentëve).
-- Do të dizajnoja në fillim flow-in e prezantimit final – dhe pastaj do ta ndërtoja UI-n rreth atij flow-i, në vend që t’i mendoja veçoritë në mënyrë lineare.
+Supabase Depth: From basic auth to complex session management, I am now confident in building scalable, secure backends.
 
----
+What I would do differently:
+Use Context API or Zustand earlier for global state management (language, theme, notifications) instead of manual prop-drilling.
 
-## 5. Përfundim: Nga projekt në zgjidhje reale
+Add Playwright or Cypress automated tests for critical flows (login, AI grading) to ensure stability during development.
 
-AI Teacher Assistant për mua nuk është vetëm një ushtrim kursi në “Programim të Avancuar”.  
-Ai është një **case study konkret** se si:
+5. Conclusion: From project to real solution
+AI Teacher Assistant is a concrete case study of modern software development. Combining Next.js 15, Supabase, and AI (Vision + Generative) isn't just code—it's a solution that a teacher can realistically imagine using every week. This project has increased my confidence as a full-stack developer, shifting my focus toward architecture, UX, and real-world value.
 
-- Next.js 15,
-- Supabase,
-- dhe AI (Llama 3.3 70B)
+Project Status: Ready for Final Presentation.
 
-mund të kombinohen për të krijuar një mjet që një profesor mund ta imagjinojë duke e përdorur çdo javë.
-
-Ky projekt më ka dhënë besim më të madh si zhvillues full-stack, por edhe si dikush që di të mendojë për vlerën reale të një aplikacioni për përdoruesin final.
-
-**Project Status:** Ready for Final Presentation.  
-**Date:** April 26, 2026
+Date: May 20, 2026
