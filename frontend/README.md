@@ -16,6 +16,7 @@ The primary goal of this project is to streamline the educational workflow, savi
 - **Authentication:** Secure login and registration via Supabase Auth.
 - **Profile Management:** Update names, passwords, and avatars via a modern modal interface.
 - **Offline Resilience:** Real-time "Connection Lost" detection to prevent API crashes during network drops.
+- **UI Customization:** Supports **Dark/Light mode** and **Internationalization (i18n)** for English/Albanian language support.
 
 ---
 
@@ -25,12 +26,14 @@ Interactive dashboard displaying real-time statistics fetched directly from the 
 - **Class Average:** Overall class performance metrics.
 - **AI Accuracy:** Monitored AI model precision (~99.2%).
 - **Weekly Activity:** Evaluations completed in the last 7 days.
+- **Real-time Notifications:** Integrated alert system for student updates and system events.
 
 ---
 
-### 🤖 AI Grading System
-- Teacher inputs the **question** and the **student’s answer**.
-- AI analyzes the text and provides:
+### 🤖 AI Grading System (Multimodal)
+- **Text-based Grading:** Teacher inputs the **question** and the **student’s answer** for analysis.
+- **AI Vision Grading:** Upload photos or use the camera to analyze handwritten student work using **Llama 3.2 Vision**.
+- AI analyzes the content and provides:
   - Automatic **score**
   - **Strengths**
   - **Weaknesses** / suggestions for improvement
@@ -116,6 +119,9 @@ Integrated directly into the **Gradebook** tab to manage student absences.
 
 ---
 
+### ⏱️ Time Management (NEW)
+- **Timer:** Integrated countdown/stopwatch module to manage class activities and exam durations efficiently.
+
 ### 💬 Integrated Feedback System
 - In-app feedback modal with:
   - Star rating (1–5)
@@ -142,35 +148,29 @@ Integrated directly into the **Gradebook** tab to manage student absences.
 
 2. **Navigation**
    - Use the left sidebar to move between:
-     - Dashboard
-     - Gradebook (Regjistri)
-     - AI Grading
-     - AI Exams
-     - AI Materials
-     - AI Homework
-     - Analytics (Coming Soon)
+     - Dashboard (Real-time stats)
+     - Gradebook (Registry & Absences)
+     - AI Grading (Text & Vision/Photo analysis)
+     - AI Exams/Materials/Homework
+     - Timer (Class time management)
    - All transitions are SPA-style (no full reload).
 
 3. **Working with the Gradebook & Absences**
    - Open the **Gradebook** tab.
    - Add a new student with subject and period grades.
    - View students grouped by subject and see class averages.
-   - Use actions in each row to:
-     - Edit / Delete student
-     - Manage absences for that student
-   - Switch to the **Mungesat** view (if enabled) to see and filter all absences.
+   - Use actions in each row to manage absences.
 
 4. **Using AI Modules**
-   - AI Grading: Paste question + answer → get instant evaluation.
-   - AI Exams: Configure subject, level, difficulty → generate full exam.
-   - AI Materials: Provide subject + topic → generate learning content.
-   - AI Homework: Configure subject, topic, level, number of tasks → generate detailed homework with rubrics.
+   - **AI Grading:** Choose between Text input or **Photo/Camera** to evaluate work.
+   - AI Exams/Materials/Homework: Configure parameters → generate content → export.
 
-5. **Exporting**
-   - After generation, use the export buttons (PDF / Word) to download content ready for printing or sharing.
+5. **Exporting & Utilities**
+   - Use the export buttons (PDF / Word) to download content.
+   - Toggle language (EN/SQ) or theme (Dark/Light) via the profile settings.
 
 6. **Feedback**
-   - Use the **Feedback** option in the sidebar to rate the system and submit improvement suggestions.
+   - Use the **Feedback** option in the sidebar to rate the system.
 
 ---
 
@@ -186,7 +186,7 @@ Integrated directly into the **Gradebook** tab to manage student absences.
   - Auth (email/password)
   - PostgreSQL
   - Storage (avatars, etc.)
-- **AI Integration:** Groq Cloud – Llama 3.3 70B
+- **AI Integration:** Groq Cloud – Llama 3.3 70B & Llama 3.2 Vision
 - **Documents & Export:**
   - `docx` (Word)
   - `file-saver`
@@ -199,7 +199,7 @@ Integrated directly into the **Gradebook** tab to manage student absences.
 
 ```bash
 # Clone the project
-git clone https://github.com/dionbeqirii/AITeacherAssistant.git
+git clone [https://github.com/dionbeqirii/AITeacherAssistant.git](https://github.com/dionbeqirii/AITeacherAssistant.git)
 cd AITeacherAssistant
 
 # Install dependencies
@@ -212,4 +212,3 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 
 # Start the application
 npm run dev -- -p 3001
-
