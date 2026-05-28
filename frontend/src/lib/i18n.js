@@ -423,7 +423,7 @@ const resources = {
       "METRIC_ABOVE": "Above average",
       "METRIC_BELOW": "Below average",
       "METRIC_NO_DATA": "No data",
-      "METRIC_AI_MODEL": "Llama 3.3 70B",
+      "METRIC_AI_MODEL": "OPENAI",
       "METRIC_7_DAY": "7-day activity",
 
       // === GRADING ===
