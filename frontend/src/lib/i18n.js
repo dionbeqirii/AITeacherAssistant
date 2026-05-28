@@ -404,7 +404,7 @@ const resources = {
 
       // === HEADER ===
       "HEADER_GREETING": "Welcome, {{name}}!",
-      "HEADER_SUBTITLE": "AI Teaching Assistant",
+      "HEADER_SUBTITLE": "AI Teacher Assistant",
       "HEADER_PROFILE": "Profile",
       "HEADER_AUTHENTICATING": "Authenticating...",
 
